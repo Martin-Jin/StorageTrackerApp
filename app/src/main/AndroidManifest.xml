@@ -16,7 +16,7 @@
             android:name="com.martin.storage.StorageActivity"
             android:exported="false" />
         <activity
-            android:name="com.martin.storage.FireBase"
+            android:name="com.martin.storage.SignInActivity"
             android:exported="false" />
         <activity
             android:name="com.martin.storage.MainActivity"
