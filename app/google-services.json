@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "377055073196",
+    "firebase_url": "https://storagetrackerapp-7bc55-default-rtdb.firebaseio.com",
+    "project_id": "storagetrackerapp-7bc55",
+    "storage_bucket": "storagetrackerapp-7bc55.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:377055073196:android:83081cb6a841284bd7e009",
+        "android_client_info": {
+          "package_name": "com.martin.storage"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "377055073196-4cndimpn9uc7n1nuisvr4fdk2lsu09n4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC_4wusUymxu-BXtFB5SKJ-bYHloKPbTa0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "377055073196-4cndimpn9uc7n1nuisvr4fdk2lsu09n4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
