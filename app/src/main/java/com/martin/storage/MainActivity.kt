@@ -1,8 +1,8 @@
 package com.martin.storage
 
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -28,17 +28,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
+import com.martin.storage.data.readLocalData
+import com.martin.storage.data.storageItemPath
 import com.martin.storage.ui.theme.TestTheme
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-
-// DataStore instance for storing data locally
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,19 +41,16 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
-                    val context = LocalContext.current
                     // Centering content
                     Column(
-                        modifier = Modifier.fillMaxSize().padding(innerPadding),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding),
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Title(
                             string = "Storage app",
-                        )
-                        MenuButton(
-                            { context.startActivity(Intent(context, SignInActivity::class.java)) },
-                            "Sign in"
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                         CheckUID()
@@ -81,29 +70,24 @@ class MainActivity : ComponentActivity() {
             context,
             uidLocalPath
         ).collectAsState(initial = "NOT SIGNED IN")
+
+        // Send to sign in if not signed in. Else show menu button
         if (savedUID == null) {
             val intent = Intent(context, SignInActivity::class.java)
             // Send user to sign in page
             context.startActivity(intent)
+        } else if (savedUID != "NOT SIGNED IN"){
+            MenuButton(
+                { context.startActivity(Intent(context, StorageActivity::class.java)) },
+                "Open"
+            )
+            // Read the users stored local data
+            val savedData by readLocalData(context, storageItemPath).collectAsState("")
+            Log.e("Writing test",savedData.toString())
         }
+
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "Signed in as: $savedUID", fontSize = 16.sp)
-    }
-}
-
-// Write function for local data (suspend function)
-suspend fun writeLocalData(context: Context, key: String, value: String) {
-    val dataStoreKey = stringPreferencesKey(key)
-    context.dataStore.edit { settings ->
-        settings[dataStoreKey] = value
-    }
-}
-
-// Read function for local data (returns a Flow)
-fun readLocalData(context: Context, key: String): Flow<String?> {
-    val dataStoreKey = stringPreferencesKey(key)
-    return context.dataStore.data.map { preferences ->
-        preferences[dataStoreKey]
     }
 }
 

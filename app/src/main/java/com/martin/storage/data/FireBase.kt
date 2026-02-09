@@ -1,4 +1,4 @@
-package com.martin.storage
+package com.martin.storage.data
 
 import com.google.firebase.Firebase
 import com.google.firebase.database.DataSnapshot

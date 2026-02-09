@@ -22,27 +22,31 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.martin.storage.data.RowItem
+import com.martin.storage.data.saveStorageItem
+import com.martin.storage.data.storageItems
 import com.martin.storage.ui.theme.TestTheme
 
 // Variables for sizes
@@ -87,14 +91,13 @@ fun TopTab(modifier: Modifier = Modifier) {
 
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Fridge", "Cabinet", "Others")
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    val items = remember {
-        mutableListOf(mutableStateListOf(RowItem(pgIndex = 0), RowItem(pgIndex = 0)))
-    }
-
+    val items = remember { storageItems }
     Column(modifier.fillMaxSize()) {
 
-        TabRow(selectedTabIndex = selectedTab) {
+        SecondaryTabRow(selectedTabIndex = selectedTab) {
             tabs.forEachIndexed { index, title ->
                 Tab(
                     selected = selectedTab == index,
@@ -114,8 +117,12 @@ fun TopTab(modifier: Modifier = Modifier) {
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            DisplayRows(list = items[0])
-            AddButton(onClick = { items[0].add(RowItem(pgIndex = selectedTab)) })
+            DisplayRows(storageItems[0])
+            AddButton(onClick = {
+                val newRowItem = RowItem(pgIndex = selectedTab)
+                items[0].add(newRowItem)
+                saveStorageItem(context, scope, newRowItem)
+            })
         }
     }
 }
@@ -130,6 +137,8 @@ fun DisplayRows(
         modifier = Modifier
             .fillMaxWidth()
     ) {
+        // Each time a new row is composed, one object is used for displayed and another for
+        // storage / json conversion is used. 
         items(list) { item ->
             ItemRow(rowItem = item, onDelete = { list.remove(item) })
         }
@@ -146,20 +155,27 @@ fun AddButton(onClick: () -> Unit) {
 
 // A single row that displays an item
 @Composable
-fun ItemRow(rowItem: RowItem, onDelete: () -> Unit, modifier: Modifier = Modifier) {
+fun ItemRow(
+    rowItem: RowItem,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     var showMenu by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     if (showEditDialog) {
         EditItemDialog(
-            itemToEdit = rowItem,
+            displayItem = rowItem,
             onDismiss = {
                 @Suppress("AssignedValueIsNeverRead")
                 showEditDialog = false
             },
-            onSave = { name, count, itemToEdit ->
-                itemToEdit.name = name
-                itemToEdit.count = count.toInt()
+            onSave = { name, count, displayItem ->
+                displayItem.name = name
+                displayItem.count = count.toInt()
+                saveStorageItem(context, scope, displayItem)
                 @Suppress("AssignedValueIsNeverRead")
                 showEditDialog = false
             }
@@ -210,13 +226,19 @@ fun ItemRow(rowItem: RowItem, onDelete: () -> Unit, modifier: Modifier = Modifie
             Row {
                 // Add button
                 Button(
-                    onClick = { rowItem.increaseCount() }
+                    onClick = {
+                        rowItem.increaseCount()
+                        saveStorageItem(context, scope, rowItem)
+                    }
                 ) {
                     Text(text = "+", fontSize = 15.sp)
                 }
                 // Decrease button
                 Button(
-                    onClick = { rowItem.decreaseCount() }
+                    onClick = {
+                        rowItem.decreaseCount()
+                        saveStorageItem(context, scope, rowItem)
+                    }
                 ) {
                     Text(text = "-", fontSize = 15.sp)
                 }
@@ -247,14 +269,16 @@ fun ItemRow(rowItem: RowItem, onDelete: () -> Unit, modifier: Modifier = Modifie
     }
 }
 
+// Display row used to change UI
+// item to edit is a temporary object used to store the edited data as json locally
 @Composable
 fun EditItemDialog(
-    itemToEdit: RowItem,
+    displayItem: RowItem,
     onDismiss: () -> Unit,
     onSave: (String, String, RowItem) -> Unit
 ) {
-    var nameText by remember { mutableStateOf(itemToEdit.name) }
-    var countText by remember { mutableStateOf(itemToEdit.count.toString()) }
+    var nameText by remember { mutableStateOf(displayItem.name) }
+    var countText by remember { mutableStateOf(displayItem.count.toString()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -278,7 +302,7 @@ fun EditItemDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onSave(nameText, countText, itemToEdit) }
+                onClick = { onSave(nameText, countText, displayItem) }
             ) {
                 Text("Save")
             }
