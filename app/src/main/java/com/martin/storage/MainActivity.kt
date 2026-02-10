@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -28,20 +29,33 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.martin.storage.data.LocalRowItem
 import com.martin.storage.data.readLocalData
+import com.martin.storage.data.readLocalObjects
 import com.martin.storage.data.storageItemPath
+import com.martin.storage.data.storageItems
+import com.martin.storage.data.uidLocalPath
 import com.martin.storage.ui.theme.TestTheme
 
+// --- Constants ---
+private const val TAG = "MainActivity"
+
+/**
+ * The main entry point of the application.
+ * This activity serves as the initial screen, responsible for checking the user's sign-in status
+ * and navigating them to the appropriate screen.
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Enables edge-to-edge display for a more immersive UI.
         enableEdgeToEdge()
         setContent {
             TestTheme {
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
-                    // Centering content
+                    // Main layout column, centered both vertically and horizontally.
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -53,6 +67,7 @@ class MainActivity : ComponentActivity() {
                             string = "Storage app",
                         )
                         Spacer(modifier = Modifier.height(24.dp))
+                        // The CheckUID composable handles the core logic for this screen.
                         CheckUID()
                     }
                 }
@@ -60,30 +75,60 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Check id locally so users don't have to sign in again
+    /**
+     * A composable function that checks the user's sign-in status and local data.
+     * It observes DataStore and decides whether to show the main menu or navigate to the sign-in screen.
+     */
     @Composable
     fun CheckUID() {
         val context = LocalContext.current
-        // Read the saved value from DataStore.
-        // `collectAsState` converts the Flow into a State object that Compose can observe.
+
+        // --- State Observation ---
+
+        // Observe the user's UID from DataStore.
+        // `collectAsState` transforms the Flow from DataStore into a Compose State.
+        // The composable will automatically recompose whenever the UID changes.
+        // "NOT SIGNED IN" is a temporary initial value before the first value is read from disk.
         val savedUID by readLocalData(
             context,
             uidLocalPath
         ).collectAsState(initial = "NOT SIGNED IN")
 
-        // Send to sign in if not signed in. Else show menu button
-        if (savedUID == null) {
-            val intent = Intent(context, SignInActivity::class.java)
-            // Send user to sign in page
-            context.startActivity(intent)
-        } else if (savedUID != "NOT SIGNED IN"){
+        // Observe the user's stored items from DataStore.
+        // We explicitly provide the type <LocalRowItem> because readLocalObjects is a generic function.
+        // The initial value is `null` because the data might not exist yet when the app starts.
+        val savedData by readLocalObjects<LocalRowItem>(context, storageItemPath).collectAsState(initial = null)
+
+        // --- Side Effects ---
+
+        // `LaunchedEffect` is used to perform side effects (like navigation or logging) in response to state changes.
+        // This block will run once when the composable enters the composition, and again anytime `savedUID` or `savedData` changes.
+        LaunchedEffect(savedUID, savedData) {
+            // If savedUID is null, it means the user has never signed in.
+            if (savedUID == null) {
+                Log.d(TAG, "User is not signed in. Navigating to SignInActivity.")
+                val intent = Intent(context, SignInActivity::class.java)
+                context.startActivity(intent)
+            }
+
+            // If savedData is not null, update the global in-memory cache.
+            // This is a side effect and must be done inside a LaunchedEffect.
+            savedData?.let { data ->
+                Log.d(TAG, "Successfully read ${data.size} items from local storage. Updating in-memory cache.")
+                storageItems = data.toMutableList()
+            }
+        }
+
+
+        // --- UI Rendering ---
+
+        // Only show the "Open" button if the user is properly signed in.
+        // We check against "NOT SIGNED IN" to avoid showing the button during the brief initial loading state.
+        if (savedUID != null && savedUID != "NOT SIGNED IN") {
             MenuButton(
-                { context.startActivity(Intent(context, StorageActivity::class.java)) },
-                "Open"
+                callback = { context.startActivity(Intent(context, StorageActivity::class.java)) },
+                text = "Open"
             )
-            // Read the users stored local data
-            val savedData by readLocalData(context, storageItemPath).collectAsState("")
-            Log.e("Writing test",savedData.toString())
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -91,7 +136,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Page preview
+// --- Reusable UI Components ---
+
+/**
+ * A preview composable for visualizing the MainActivity UI in Android Studio.
+ */
 @Preview(showSystemUi = true)
 @Composable
 fun PagePreview() {
@@ -99,7 +148,6 @@ fun PagePreview() {
         Scaffold(
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
-            // Centering content
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -120,7 +168,10 @@ fun PagePreview() {
     }
 }
 
-// Buttons and title
+/**
+ * A simple composable for displaying a large, centered title.
+ * @param string The text to display in the title.
+ */
 @Composable
 fun Title(string: String, modifier: Modifier = Modifier) {
     Text(
@@ -131,11 +182,13 @@ fun Title(string: String, modifier: Modifier = Modifier) {
         modifier = modifier
             .padding(bottom = 24.dp),
     )
-
 }
 
-// Menu button
-// Switches activity to activity passed in.
+/**
+ * A standardized button for navigating between activities.
+ * @param callback The lambda function to execute when the button is clicked.
+ * @param text The text to display on the button.
+ */
 @Composable
 fun MenuButton(callback: () -> Unit, text: String) {
     Row(
@@ -146,10 +199,9 @@ fun MenuButton(callback: () -> Unit, text: String) {
         Button(
             modifier = Modifier
                 .size(175.dp, 50.dp),
-            onClick = { callback() }
+            onClick = callback // Directly use the passed-in callback.
         ) {
             Text(text = text, fontSize = 15.sp)
         }
     }
-
 }
