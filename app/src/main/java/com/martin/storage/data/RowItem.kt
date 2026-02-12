@@ -18,23 +18,32 @@ import kotlinx.serialization.Serializable
  * preventing infinite recomposition loops.
  *
  * @property name The name of the item (e.g., "Apples").
- * @property img The resource ID of the item's image.
+ * @property img The resource ID or file path of the item's image.
  * @property count The quantity of the item.
  * @property pgIndex The index of the tab (e.g., Fridge, Cabinet) where the item belongs.
  */
 @Serializable
 data class LocalRowItem(
-    var name: String,
-    var img: Int,
-    var count: Int,
-    var pgIndex: Int
+    val name: String,
+    val img: String,
+    val count: Int,
+    val unit: String,
+    val pgIndex: Int,
+    val id: String
 ) {
     /**
      * Converts this data-centric `LocalRowItem` into a UI-centric `RowItem`.
      * @return A `RowItem` instance ready to be displayed in the UI.
      */
     fun toRowItem(): RowItem {
-        return RowItem(this.name, this.img, this.count, this.pgIndex)
+        return RowItem(
+            initialName = this.name,
+            initialImg = this.img,
+            initialCount = this.count,
+            initialUnit = this.unit,
+            initialPgIndex = this.pgIndex,
+            id = this.id
+        )
     }
 }
 
@@ -44,19 +53,44 @@ data class LocalRowItem(
  * can automatically recompose when the item's properties (like `name` or `count`) change.
  *
  * @param initialName The starting name of the item.
- * @param img The resource ID of the item's image.
+ * @param initialImg The resource ID or file path of the item's image.
  * @param initialCount The starting quantity of the item.
- * @param pgIndex The index of the tab where the item belongs.
+ * @param initialPgIndex The index of the tab where the item belongs.
  */
 class RowItem(
     initialName: String = "sunflowers",
-    val img: Int = R.drawable.sunflowers,
+    initialImg: String = R.drawable.sunflowers.toString(),
     initialCount: Int = 0,
-    val pgIndex: Int = 0
+    initialUnit: String = "Kg",
+    initialPgIndex: Int = 0,
+    id: String? = null // Changed to nullable
 ) {
-    // These properties are Compose State objects. When their value changes, any composable that reads them will be recomposed.
+    companion object {
+        private val existingIds = mutableSetOf<String>()
+    }
+
+    val id: String
     var name by mutableStateOf(initialName)
     var count by mutableIntStateOf(initialCount)
+    var unit by mutableStateOf(initialUnit)
+    var img by mutableStateOf(initialImg)
+    var pgIndex by mutableIntStateOf(initialPgIndex)
+
+    init {
+        // Use passed id if it is not null and unique
+        if (id != null && existingIds.add(id)) {
+            this.id = id
+        } else {
+            // Otherwise, generate a new unique id
+            var n = 1
+            var tempId = "itemNum$n-P$initialPgIndex"
+            while (!existingIds.add(tempId)) {
+                n++
+                tempId = "$initialName-$n-$initialPgIndex"
+            }
+            this.id = tempId
+        }
+    }
 
     /**
      * Safely increases the item count by one.
@@ -79,6 +113,13 @@ class RowItem(
      * @return A `LocalRowItem` instance suitable for JSON serialization.
      */
     fun toLocalRowItem(): LocalRowItem {
-        return LocalRowItem(this.name, this.img, this.count, this.pgIndex)
+        return LocalRowItem(
+            name = this.name,
+            img = this.img,
+            count = this.count,
+            unit = this.unit,
+            pgIndex = this.pgIndex,
+            id = this.id
+        )
     }
 }

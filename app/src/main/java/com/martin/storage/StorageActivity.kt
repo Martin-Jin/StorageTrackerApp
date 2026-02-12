@@ -1,25 +1,36 @@
 package com.martin.storage
 
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Scaffold
@@ -38,22 +49,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.rememberAsyncImagePainter
 import com.martin.storage.data.RowItem
+import com.martin.storage.data.saveImageFromUri
 import com.martin.storage.data.storageItems
 import com.martin.storage.data.updateStoredItems
 import com.martin.storage.ui.theme.TestTheme
+import java.io.File
 
 // --- Constants ---
 private const val TAG = "StorageActivity"
-const val imgWidth = 0.2f
+const val ITEMFONTSIZE = 17
 
 /**
  * The main activity for displaying and managing storage items.
@@ -82,7 +96,7 @@ class StorageActivity : ComponentActivity() {
                 ) { innerPadding ->
                     Column(modifier = Modifier.padding(innerPadding)) {
                         // The TopTab composable is the main UI for this screen.
-                        TopTab(displayItems = displayItems)
+                        Tabs(displayItems = displayItems)
                     }
                 }
             }
@@ -99,7 +113,7 @@ class StorageActivity : ComponentActivity() {
  * @param displayItems The observable list of items to display and manage.
  */
 @Composable
-fun TopTab(modifier: Modifier = Modifier, displayItems: SnapshotStateList<RowItem>) {
+fun Tabs(modifier: Modifier = Modifier, displayItems: SnapshotStateList<RowItem>) {
 
     // State for the currently selected tab index.
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -121,10 +135,19 @@ fun TopTab(modifier: Modifier = Modifier, displayItems: SnapshotStateList<RowIte
         }
 
         // Display the title based on the selected tab.
-        when (selectedTab) {
-            0 -> Title("Fridge")
-            1 -> Title("Cabinet")
-            2 -> Title("Others")
+        Row(
+            modifier = Modifier
+                .padding(top = 10.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            var titleText by remember { mutableStateOf("Fridge") }
+            when (selectedTab) {
+                0 -> titleText = "Fridge"
+                1 -> titleText = "Cabinet"
+                2 -> titleText = "Others"
+            }
+            Title(titleText)
         }
 
         Column(
@@ -133,13 +156,16 @@ fun TopTab(modifier: Modifier = Modifier, displayItems: SnapshotStateList<RowIte
         ) {
             // Display the list of items filtered by the current tab.
             DisplayRows(items = displayItems, pgIndex = selectedTab)
+
             // The button to add a new item.
-            AddButton(onClick = {
-                val newRowItem = RowItem(pgIndex = selectedTab)
+            Button(modifier = Modifier.padding(16.dp), onClick = {
+                val newRowItem = RowItem(initialPgIndex = selectedTab, initialName = "New item")
                 displayItems.add(newRowItem)
                 // Save the updated list to DataStore.
                 updateStoredItems(context, scope, displayItems, true)
-            })
+            }) {
+                Text(text = "Add item", fontSize = 15.sp)
+            }
         }
     }
 }
@@ -162,8 +188,11 @@ fun DisplayRows(
         modifier = Modifier
             .fillMaxWidth()
     ) {
-        // `items` is a key performance feature. It only composes and lays out the items that are currently visible.
-        items(itemsToShow) { item ->
+        // By providing a key, we help Compose understand which items are which, improving performance.
+        items(
+            items = itemsToShow,
+            key = { item -> item.id }
+        ) { item ->
             ItemRow(rowItem = item, onDelete = { items.remove(item) }, allItems = items)
         }
     }
@@ -175,11 +204,11 @@ fun DisplayRows(
  * @param onDelete A callback to execute when this item should be deleted.
  * @param allItems The complete list of items, passed through for saving operations.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ItemRow(
     rowItem: RowItem,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier,
     allItems: MutableList<RowItem>
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -187,24 +216,24 @@ fun ItemRow(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // If `showEditDialog` is true, display the dialog composable.
-    if (showEditDialog) {
+    if (showEditDialog || rowItem.name.contains("New item")) {
         EditItemDialog(
             displayItem = rowItem,
             onDismiss = { showEditDialog = false },
             onSave = {
-                // When the dialog is saved, trigger an update for the entire list in storage.
                 updateStoredItems(context, scope, allItems, true)
                 showEditDialog = false
             }
         )
     }
 
-    // The main Row layout for the item.
-    Row(
-        modifier = modifier
+
+    Card(
+        shape = RoundedCornerShape(30.dp),
+        modifier = Modifier
+            .heightIn(0.dp, 70.dp)
             .fillMaxWidth()
-            // A pointerInput modifier to detect long presses for showing the context menu.
+            .padding(vertical = 4.dp, horizontal = 8.dp)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onLongPress = {
@@ -214,80 +243,85 @@ fun ItemRow(
             }
     ) {
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier
-                .heightIn(max = 80.dp)
-                .fillMaxWidth()
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Item image
             Image(
-                modifier = Modifier.weight(imgWidth),
-                painter = painterResource(id = rowItem.img),
+                painter = rememberAsyncImagePainter(
+                    model = rowItem.img.toIntOrNull() ?: File(rowItem.img)
+                ),
                 contentDescription = rowItem.name,
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .width(90.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(topStart = 30.dp, bottomStart = 30.dp))
             )
-            // Item name and count
-            Row {
-                Text(text = "${rowItem.name}: ", fontSize = 20.sp)
-                Text(text = "${rowItem.count}", fontSize = 20.sp)
+
+            Spacer(Modifier.width(16.dp))
+
+            Row(
+                modifier = Modifier.weight(0.7f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${rowItem.name}: ${rowItem.count} ${rowItem.unit}",
+                    fontSize = ITEMFONTSIZE.sp,
+                    maxLines = 1,
+                    modifier = Modifier.basicMarquee()
+                )
             }
-            // Buttons to increase or decrease the count
-            Row {
+
+            Row(
+                modifier = Modifier.padding(end = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Button(
                     onClick = {
                         rowItem.increaseCount()
-                        // Persist the change to storage.
                         updateStoredItems(context, scope, allItems)
-                    }
-                ) { Text(text = "+", fontSize = 15.sp) }
+                    },
+                    modifier = Modifier.size(30.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) { Text(text = "+") }
+
+                Spacer(Modifier.width(8.dp))
+
                 Button(
                     onClick = {
                         rowItem.decreaseCount()
-                        // Persist the change to storage.
                         updateStoredItems(context, scope, allItems)
-                    }
-                ) { Text(text = "-", fontSize = 15.sp) }
+                    },
+                    modifier = Modifier.size(30.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) { Text(text = "-") }
             }
         }
-
-        // Dropdown menu for Edit/Delete, shown on long press.
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text("Delete") },
-                onClick = {
-                    onDelete() // This removes the item from the local `displayItems` list.
-                    // Persist the deletion to storage.
-                    updateStoredItems(context, scope, allItems, true)
-                    showMenu = false
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("Edit") },
-                onClick = {
-                    showEditDialog = true
-                    showMenu = false
-                }
-            )
-        }
     }
+
+    DropdownMenu(
+        expanded = showMenu,
+        onDismissRequest = { showMenu = false },
+    ) {
+        DropdownMenuItem(
+            text = { Text("Delete") },
+            onClick = {
+                onDelete()
+                updateStoredItems(context, scope, allItems, true)
+                showMenu = false
+            }
+        )
+        DropdownMenuItem(
+            text = { Text("Edit") },
+            onClick = {
+                showEditDialog = true
+                showMenu = false
+            }
+        )
+    }
+
 }
 
 // --- Helper Composable & Previews ---
-
-/**
- * A simple button for adding a new item.
- */
-@Composable
-fun AddButton(onClick: () -> Unit) {
-    Button(modifier = Modifier.padding(16.dp), onClick = onClick) {
-        Text(text = "Add item", fontSize = 15.sp)
-    }
-}
-
 /**
  * A dialog for editing the name and count of an item.
  * @param displayItem The item being edited.
@@ -300,9 +334,28 @@ fun EditItemDialog(
     onDismiss: () -> Unit,
     onSave: () -> Unit
 ) {
+    val context = LocalContext.current
     // `remember` with keys: if the displayItem changes, the state for name/count will reset to the new item's values.
-    var nameText by remember(displayItem) { mutableStateOf(displayItem.name) }
-    var countText by remember(displayItem) { mutableStateOf(displayItem.count.toString()) }
+    var nameText by remember { mutableStateOf(displayItem.name) }
+    var countText by remember { mutableStateOf(displayItem.count.toString()) }
+    var unitText by remember { mutableStateOf(displayItem.unit) }
+    var pgIndex by remember { mutableIntStateOf(displayItem.pgIndex) }
+    var imgText by remember { mutableStateOf(displayItem.img) }
+
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri: Uri? ->
+            uri?.let {
+                val imagePath = saveImageFromUri(context, it)
+                if (imagePath != null) {
+                    imgText = imagePath
+                }
+            }
+        }
+    )
+
+    var expanded by remember { mutableStateOf(false) }
+    val pages = listOf(0, 1, 2)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -312,7 +365,7 @@ fun EditItemDialog(
                 TextField(
                     value = nameText,
                     onValueChange = { nameText = it },
-                    label = { Text("Item Name") },
+                    label = { Text("Name (Don't use New item)") },
                     singleLine = true
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -322,15 +375,57 @@ fun EditItemDialog(
                     label = { Text("Count") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                TextField(
+                    value = unitText,
+                    onValueChange = { unitText = it },
+                    label = { Text("Unit") },
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Page:")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Button(onClick = { expanded = true }) {
+                            Text(pgIndex.toString())
+                        }
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            pages.forEach { page ->
+                                DropdownMenuItem(
+                                    text = { Text(page.toString()) },
+                                    onClick = {
+                                        pgIndex = page
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                TextField(
+                    value = imgText,
+                    onValueChange = { imgText = it },
+                    label = { Text("Image URI / Resource ID") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                )
+                Button(onClick = { imagePicker.launch("image/*") }) {
+                    Text("Upload Image")
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    // Update the actual RowItem's properties.
-                    // Because `RowItem` uses Compose State delegates, the UI will automatically update.
                     displayItem.name = nameText
-                    displayItem.count = countText.toIntOrNull() ?: 0 // Safely parse to Int
+                    displayItem.count = countText.toIntOrNull() ?: 0
+                    displayItem.unit = unitText
+                    displayItem.pgIndex = pgIndex
+                    displayItem.img = imgText
                     onSave()
                 }
             ) { Text("Save") }
@@ -339,19 +434,4 @@ fun EditItemDialog(
             Button(onClick = onDismiss) { Text("Cancel") }
         }
     )
-}
-
-/**
- * A preview composable for visualizing the StorageActivity UI.
- */
-@Preview(showSystemUi = true)
-@Composable
-fun StoragePreview() {
-    TestTheme {
-        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-            Column(modifier = Modifier.padding(innerPadding)) {
-                // In a preview, we can provide a dummy, non-interactive list.
-            }
-        }
-    }
 }

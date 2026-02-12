@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
         // --- Side Effects ---
 
         // `LaunchedEffect` is used to perform side effects (like navigation or logging) in response to state changes.
-        // This block will run once when the composable enters the composition, and again anytime `savedUID` or `savedData` changes.
+        // This block will run once when the composable enters the composition, a   nd again anytime `savedUID` or `savedData` changes.
         LaunchedEffect(savedUID, savedData) {
             // If savedUID is null, it means the user has never signed in.
             if (savedUID == null) {

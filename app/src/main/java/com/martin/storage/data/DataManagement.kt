@@ -1,6 +1,17 @@
+/**
+ * This file manages all local data storage for the application using Jetpack DataStore and Kotlinx Serialization.
+ * It provides a set of high-level functions for reading, writing, and appending serializable objects,
+ * abstracting the underlying implementation details of DataStore and JSON conversion.
+ *
+ * It is structured into three main sections:
+ * 1. High-Level Data Functions: Simple API for common data operations on lists of objects.
+ * 2. Low-Level DataStore Functions: Generic helpers for direct DataStore interaction (reading/writing raw strings).
+ * 3. Business Logic Functions: App-specific logic, like handling `RowItem` conversions and updates.
+ */
 package com.martin.storage.data
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -13,6 +24,8 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import java.io.File
+import java.io.FileOutputStream
 
 // --- Constants and Global Variables ---
 
@@ -181,5 +194,30 @@ fun updateStoredItems(
                 localRowItems
             )
         }
+    }
+}
+
+/**
+ * Copies an image from a given URI to the app's internal storage.
+ * This is useful for creating a persistent local copy of an image selected by the user.
+ *
+ * @param context The application context.
+ * @param uri The URI of the image to save.
+ * @return The absolute path of the newly created image file, or null if saving fails.
+ */
+fun saveImageFromUri(context: Context, uri: Uri): String? {
+    return try {
+        val inputStream = context.contentResolver.openInputStream(uri)
+        val fileName = "img_${System.currentTimeMillis()}.jpg"
+        val file = File(context.filesDir, fileName)
+        val outputStream = FileOutputStream(file)
+        inputStream?.copyTo(outputStream)
+        inputStream?.close()
+        outputStream.close()
+        Log.d("DataManagement", "Saved image to: ${file.absolutePath}")
+        file.absolutePath
+    } catch (e: Exception) {
+        Log.e("DataManagement", "Error saving image from URI", e)
+        null
     }
 }
