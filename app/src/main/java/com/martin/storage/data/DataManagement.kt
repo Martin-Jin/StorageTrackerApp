@@ -11,8 +11,11 @@
 package com.martin.storage.data
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
+import androidx.core.graphics.scale
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -42,6 +45,10 @@ const val storageItemPath = "storageItems"
  * The key used to save the uid of the user in DataStore.
  */
 const val uidLocalPath = "UID"
+/**
+ * The key used to save the last opened timestamp in DataStore.
+ */
+const val LAST_OPENED_KEY = "last_opened"
 
 /**
  * A temporary, in-memory cache for the user's storage items.
@@ -198,23 +205,48 @@ fun updateStoredItems(
 }
 
 /**
- * Copies an image from a given URI to the app's internal storage.
- * This is useful for creating a persistent local copy of an image selected by the user.
+ * Copies an image from a given URI to the app's internal storage, with optional resizing and compression.
  *
  * @param context The application context.
  * @param uri The URI of the image to save.
+ * @param quality The compression quality, from 0 to 100. 100 means no compression.
+ * @param reqWidth The desired width of the image. If null, the original width is used.
+ * @param reqHeight The desired height of the image. If null, the original height is used.
  * @return The absolute path of the newly created image file, or null if saving fails.
  */
-fun saveImageFromUri(context: Context, uri: Uri): String? {
+fun saveImageFromUri(
+    context: Context,
+    uri: Uri,
+    quality: Int = 90,
+    reqWidth: Int? = 150,
+    reqHeight: Int? = 150
+): String? {
     return try {
         val inputStream = context.contentResolver.openInputStream(uri)
+        val originalBitmap = BitmapFactory.decodeStream(inputStream)
+        inputStream?.close()
+
+        val bitmapToSave = if (reqWidth != null && reqHeight != null) {
+            originalBitmap.scale(reqWidth, reqHeight, true)
+        } else {
+            originalBitmap
+        }
+
         val fileName = "img_${System.currentTimeMillis()}.jpg"
         val file = File(context.filesDir, fileName)
         val outputStream = FileOutputStream(file)
-        inputStream?.copyTo(outputStream)
-        inputStream?.close()
+        bitmapToSave.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
         outputStream.close()
-        Log.d("DataManagement", "Saved image to: ${file.absolutePath}")
+
+        if (bitmapToSave != originalBitmap) {
+            bitmapToSave.recycle()
+        }
+        originalBitmap.recycle()
+
+        Log.d(
+            "DataManagement",
+            "Saved and compressed image to: ${file.absolutePath} with resolution ${bitmapToSave.width}x${bitmapToSave.height}"
+        )
         file.absolutePath
     } catch (e: Exception) {
         Log.e("DataManagement", "Error saving image from URI", e)

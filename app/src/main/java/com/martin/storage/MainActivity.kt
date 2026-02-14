@@ -35,7 +35,7 @@ import com.martin.storage.data.readLocalObjects
 import com.martin.storage.data.storageItemPath
 import com.martin.storage.data.storageItems
 import com.martin.storage.data.uidLocalPath
-import com.martin.storage.ui.theme.TestTheme
+import com.martin.storage.ui.theme.AppTheme
 
 // --- Constants ---
 private const val TAG = "MainActivity"
@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
         // Enables edge-to-edge display for a more immersive UI.
         enableEdgeToEdge()
         setContent {
-            TestTheme {
+            AppTheme {
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Title(
-                            string = "Storage app",
+                            string = "Stash tracker",
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                         // The CheckUID composable handles the core logic for this screen.
@@ -144,7 +144,7 @@ class MainActivity : ComponentActivity() {
 @Preview(showSystemUi = true)
 @Composable
 fun PagePreview() {
-    TestTheme {
+    AppTheme {
         Scaffold(
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
@@ -198,7 +198,7 @@ fun MenuButton(callback: () -> Unit, text: String) {
     ) {
         Button(
             modifier = Modifier
-                .size(175.dp, 50.dp),
+                .size(125.dp, 50.dp),
             onClick = callback // Directly use the passed-in callback.
         ) {
             Text(text = text, fontSize = 15.sp)

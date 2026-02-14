@@ -1,5 +1,6 @@
 package com.martin.storage.data
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -29,7 +30,9 @@ data class LocalRowItem(
     val count: Int,
     val unit: String,
     val pgIndex: Int,
-    val id: String
+    val id: String,
+    val decrement: Int = 1,
+    val decrementInterval: Int
 ) {
     /**
      * Converts this data-centric `LocalRowItem` into a UI-centric `RowItem`.
@@ -42,7 +45,9 @@ data class LocalRowItem(
             initialCount = this.count,
             initialUnit = this.unit,
             initialPgIndex = this.pgIndex,
-            id = this.id
+            id = this.id,
+            decrement = this.decrement,
+            decrementInterval = this.decrementInterval
         )
     }
 }
@@ -58,14 +63,17 @@ data class LocalRowItem(
  * @param initialPgIndex The index of the tab where the item belongs.
  */
 class RowItem(
-    initialName: String = "sunflowers",
+    initialName: String = "New item",
     initialImg: String = R.drawable.sunflowers.toString(),
     initialCount: Int = 0,
     initialUnit: String = "Kg",
     initialPgIndex: Int = 0,
-    id: String? = null // Changed to nullable
+    id: String? = null, // Changed to nullable
+    var decrement: Int = 1,
+    var decrementInterval: Int = 1
 ) {
     companion object {
+        var itemToEdit = mutableStateOf<RowItem?>(null)
         private val existingIds = mutableSetOf<String>()
     }
 
@@ -100,11 +108,14 @@ class RowItem(
     }
 
     /**
-     * Decreases the item count by one, but not below zero.
+     * Decreases the item count by the decrement value, but not below zero.
      */
     fun decreaseCount() {
         if (count > 0) {
-            count--
+            count -= decrement
+            if (count < 0) {
+                count = 0
+            }
         }
     }
 
@@ -119,7 +130,35 @@ class RowItem(
             count = this.count,
             unit = this.unit,
             pgIndex = this.pgIndex,
-            id = this.id
+            id = this.id,
+            decrement = this.decrement,
+            decrementInterval = this.decrementInterval
         )
+    }
+
+    fun updateDecrement(last: String, now: String) {
+        val lastMillis = last.toLongOrNull()
+        val nowMillis = now.toLongOrNull()
+
+        if (lastMillis == null || nowMillis == null) {
+            Log.e("RowItem", "Invalid timestamps provided for decrement update.")
+            return
+        }
+
+        val diffInMillis = nowMillis - lastMillis
+        val daysPassed = diffInMillis / (1000 * 60 * 60 * 24)
+
+        Log.d("RowItem", "Days passed since last open for item '$name': $daysPassed")
+
+        if (daysPassed > 0 && decrementInterval > 0) {
+            // Calculate how many times the decrement interval has passed
+            val timesToDecrement = daysPassed / decrementInterval
+
+            if (timesToDecrement > 0) {
+                val totalDecrement = (decrement * timesToDecrement).toInt()
+                count = (count - totalDecrement).coerceAtLeast(0)
+                Log.d("RowItem", "Decremented '$name' by $totalDecrement over $daysPassed days. New count: $count")
+            }
+        }
     }
 }

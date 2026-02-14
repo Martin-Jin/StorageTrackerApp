@@ -28,7 +28,7 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingExcept
 import com.martin.storage.data.uidLocalPath
 import com.martin.storage.data.write
 import com.martin.storage.data.writeLocalData
-import com.martin.storage.ui.theme.TestTheme
+import com.martin.storage.ui.theme.AppTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -47,7 +47,7 @@ class SignInActivity : ComponentActivity() {
             // It's called here to trigger the sign-in flow as soon as the activity is displayed.
             signIn(LocalContext.current, rememberCoroutineScope())
 
-            TestTheme {
+            AppTheme {
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
