@@ -1,12 +1,21 @@
 /**
- * This file manages all local data storage for the application using Jetpack DataStore and Kotlinx Serialization.
- * It provides a set of high-level functions for reading, writing, and appending serializable objects,
- * abstracting the underlying implementation details of DataStore and JSON conversion.
+ * This file is the central hub for managing all local data persistence in the application.
+ * It leverages Jetpack DataStore for storing key-value pairs and uses the Kotlinx Serialization
+ * library to convert complex objects into JSON strings for storage. This approach provides a robust
+ * and efficient way to handle app data, from simple user preferences to lists of custom objects.
  *
- * It is structured into three main sections:
- * 1. High-Level Data Functions: Simple API for common data operations on lists of objects.
- * 2. Low-Level DataStore Functions: Generic helpers for direct DataStore interaction (reading/writing raw strings).
- * 3. Business Logic Functions: App-specific logic, like handling `RowItem` conversions and updates.
+ * The file is organized into several sections:
+ * 1.  **Constants and Global Variables**: Defines keys for DataStore, a TAG for logging, a shared
+ *     JSON serializer instance, and an in-memory cache for frequently accessed data.
+ * 2.  **High-Level Data Functions**: These are the primary functions the app should use for data
+ *     operations. They provide a simple, type-safe API for writing, appending, and reading
+ *     serializable objects, abstracting away the underlying JSON conversion and DataStore transactions.
+ * 3.  **Low-Level DataStore Functions**: These are generic helper functions that interact directly
+ *     with DataStore to read and write raw string data. They form the foundation upon which the
+ *     high-level functions are built.
+ * 4.  **Business Logic Functions**: This section contains functions specific to the application's
+ *     data model, such as converting between UI-layer objects (`RowItem`) and data-layer objects
+ *     (`LocalRowItem`) and handling image processing tasks like saving and compressing images.
  */
 package com.martin.storage.data
 
@@ -33,50 +42,61 @@ import java.io.FileOutputStream
 // --- Constants and Global Variables ---
 
 /**
- * A constant TAG for logging to easily filter logs in Logcat.
+ * A constant TAG used for logging throughout this file. This allows for easy filtering
+ * of logs in Logcat to isolate data management-related events and errors.
  */
 const val TAG = "DataManagement"
 
 /**
- * The key used to save the list of storage items in DataStore.
+ * The preference key used to store the main list of storage items in Jetpack DataStore.
  */
 const val storageItemPath = "storageItems"
+
 /**
- * The key used to save the uid of the user in DataStore.
+ * The preference key used to store the current user's unique ID (UID) in DataStore.
  */
 const val uidLocalPath = "UID"
+
 /**
- * The key used to save the last opened timestamp in DataStore.
+ * The preference key for storing the timestamp of when the app was last opened.
+ * This is used to calculate item decrements over time.
  */
 const val LAST_OPENED_KEY = "last_opened"
 
 /**
- * A temporary, in-memory cache for the user's storage items.
- * This list is populated when the app launches to be immediately available to the UI.
+ * An in-memory cache of the user's storage items (`LocalRowItem`).
+ * This list is loaded when the application starts to provide immediate access to the data
+ * for the UI, avoiding delays from repeated asynchronous data reads.
  */
 var storageItems = mutableListOf<LocalRowItem>()
 
 /**
- * A shared instance of the Json serializer.
- * `encodeDefaults = true` ensures that properties with default values (e.g., count = 0)
- * are included in the JSON output, preventing data loss during serialization.
+ * A shared, configured instance of the Kotlinx JSON serializer.
+ * `encodeDefaults = true` is crucial here; it ensures that properties with default values
+ * (like a count of 0 or an empty string) are explicitly included in the output JSON.
+ * This prevents data loss when an object is serialized and then deserialized.
  */
 val json = Json { encodeDefaults = true }
 
 /**
- * A private extension property on Context to provide a singleton instance of DataStore.
- * This is the standard way to create and access DataStore in an Android app.
+ * A private extension property on `Context` that provides a singleton instance of `DataStore`.
+ * This is the recommended pattern for creating and accessing DataStore in an Android application,
+ * ensuring that only one instance of the DataStore exists for the given name ("settings").
  */
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 // --- High-Level Data Functions ---
 
 /**
- * Serializes a list of objects into a JSON string and saves it to DataStore, overwriting any existing data at the given key.
- * @param context The context to access DataStore.
- * @param key The key to store the objects under.
- * @param objectsToSave The list of objects to save. Must be annotated with @Serializable.
+ * Serializes a list of objects into a JSON string and saves it to DataStore, completely
+ * overwriting any existing data stored under the given key.
+ *
+ * @param context The Android context, used to access the application's DataStore instance.
+ * @param key The unique key under which the serialized data will be stored.
+ * @param objectsToSave The list of objects to be saved. The objects must be serializable,
+ *                      typically by being annotated with `@Serializable`.
  */
+
 suspend inline fun <reified T> writeLocalObjects(
     context: Context,
     key: String,
@@ -89,10 +109,13 @@ suspend inline fun <reified T> writeLocalObjects(
 }
 
 /**
- * Reads existing data from DataStore, appends new objects, and saves the combined list back.
- * @param context The context to access DataStore.
- * @param key The key where the objects are stored.
- * @param objectsToAppend The list of new objects to append. Must be annotated with @Serializable.
+ * Atomically updates a list of objects in DataStore by reading the existing list,
+ * appending new objects to it, and writing the combined list back.
+ *
+ * @param context The Android context for accessing DataStore.
+ * @param key The key where the list of objects is stored.
+ * @param objectsToAppend The list of new objects to add to the existing list.
+ *                        These objects must also be serializable.
  */
 suspend inline fun <reified T> appendObjects(
     context: Context,
@@ -103,7 +126,7 @@ suspend inline fun <reified T> appendObjects(
     // 1. Read the existing JSON string from DataStore.
     val existingJson = readLocalData(context, key).firstOrNull()
 
-    // 2. Deserialize the existing JSON into a mutable list, or create an empty one.
+    // 2. Deserialize the JSON into a mutable list. If no data exists, start with a fresh list.
     val allObjects = if (existingJson != null) {
         Log.d(TAG, "Found ${existingJson.length} chars of existing data to append to.")
         json.decodeFromString<List<T>>(existingJson).toMutableList()
@@ -116,18 +139,20 @@ suspend inline fun <reified T> appendObjects(
     allObjects.addAll(objectsToAppend)
     Log.d(TAG, "Total objects after append: ${allObjects.size}. Now writing to DataStore.")
 
-    // 4. Serialize the combined list back to a JSON string.
+    // 4. Serialize the newly combined list back into a JSON string.
     val updatedJson = json.encodeToString(allObjects)
 
-    // 5. Save the updated JSON string back to DataStore.
+    // 5. Write the updated JSON string back to DataStore, overwriting the old list.
     writeLocalData(context, key, updatedJson)
 }
 
 /**
- * Reads a JSON string from DataStore and deserializes it into a list of objects.
- * @param context The context to access DataStore.
- * @param key The key the objects are stored under.
- * @return a Flow that emits the deserialized list of objects, or null if not found.
+ * Reads a JSON string from DataStore and deserializes it into a list of objects of a specified type.
+ *
+ * @param context The Android context for accessing DataStore.
+ * @param key The key under which the objects are stored.
+ * @return A `Flow` that emits the deserialized list of objects. It will emit `null` if the key
+ *         does not exist or if the data cannot be deserialized.
  */
 inline fun <reified T> readLocalObjects(context: Context, key: String): Flow<List<T>?> {
     val stringFlow = readLocalData(context, key)
@@ -145,7 +170,8 @@ inline fun <reified T> readLocalObjects(context: Context, key: String): Flow<Lis
 // --- Low-Level DataStore Functions ---
 
 /**
- * A generic, low-level function to write a string value to a given key in DataStore.
+ * A generic, low-level function to write a raw string value to a specified key in DataStore.
+ * This is the foundational write operation used by the higher-level functions.
  */
 suspend fun writeLocalData(context: Context, key: String, value: String) {
     val dataStoreKey = stringPreferencesKey(key)
@@ -155,8 +181,9 @@ suspend fun writeLocalData(context: Context, key: String, value: String) {
 }
 
 /**
- * A generic, low-level function to read a string value from a given key in DataStore.
- * @return A Flow that will emit the string value when it's available, or null if not present.
+ * A generic, low-level function to read a raw string value from a given key in DataStore.
+ * @return A `Flow` that emits the string value whenever it changes. It emits `null` if the key
+ *         has no value.
  */
 fun readLocalData(context: Context, key: String): Flow<String?> {
     val dataStoreKey = stringPreferencesKey(key)
@@ -168,12 +195,15 @@ fun readLocalData(context: Context, key: String): Flow<String?> {
 // --- Business Logic Functions ---
 
 /**
- * A helper function to save a list of UI-layer `RowItem` objects to local storage.
- * It converts them to `LocalRowItem` objects suitable for serialization.
- * @param context The context for DataStore access.
- * @param scope A CoroutineScope to launch the DataStore operation.
- * @param rowItems The list of `RowItem` objects to save.
- * @param overWrite If true, overwrites all existing data. If false, appends to existing data.
+ * A specific business logic function to save the current state of the UI's `RowItem` list.
+ * It first converts the UI-layer `RowItem` objects into data-layer `LocalRowItem` objects,
+ * which are designed for serialization, and then writes them to local storage.
+ *
+ * @param context The context required for DataStore access.
+ * @param scope A `CoroutineScope` to launch the asynchronous save operation.
+ * @param rowItems The list of `RowItem` objects from the UI to be saved.
+ * @param overWrite If `true`, the entire existing list in storage is replaced.
+ *                  If `false`, the new items are appended to the existing list.
  */
 fun updateStoredItems(
     context: Context,
@@ -205,14 +235,15 @@ fun updateStoredItems(
 }
 
 /**
- * Copies an image from a given URI to the app's internal storage, with optional resizing and compression.
+ * Copies an image from a given content URI (e.g., from a photo gallery) to the app's private
+ * internal storage. It can also resize and compress the image to save space and improve performance.
  *
- * @param context The application context.
- * @param uri The URI of the image to save.
- * @param quality The compression quality, from 0 to 100. 100 means no compression.
- * @param reqWidth The desired width of the image. If null, the original width is used.
- * @param reqHeight The desired height of the image. If null, the original height is used.
- * @return The absolute path of the newly created image file, or null if saving fails.
+ * @param context The application context, used to resolve the content URI and access the file system.
+ * @param uri The `Uri` of the source image.
+ * @param quality The desired compression quality for the output JPEG image (0-100).
+ * @param reqWidth The target width for the image. If null, the original width is maintained.
+ * @param reqHeight The target height for the image. If null, the original height is maintained.
+ * @return The absolute path of the newly saved image file, or `null` if the operation fails.
  */
 fun saveImageFromUri(
     context: Context,
@@ -226,18 +257,21 @@ fun saveImageFromUri(
         val originalBitmap = BitmapFactory.decodeStream(inputStream)
         inputStream?.close()
 
+        // Scale the bitmap only if requested dimensions are provided
         val bitmapToSave = if (reqWidth != null && reqHeight != null) {
             originalBitmap.scale(reqWidth, reqHeight, true)
         } else {
             originalBitmap
         }
 
+        // Create a unique file name to avoid collisions
         val fileName = "img_${System.currentTimeMillis()}.jpg"
         val file = File(context.filesDir, fileName)
         val outputStream = FileOutputStream(file)
         bitmapToSave.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
         outputStream.close()
 
+        // Recycle the scaled bitmap if it was created, and always recycle the original
         if (bitmapToSave != originalBitmap) {
             bitmapToSave.recycle()
         }

@@ -41,21 +41,21 @@ import com.martin.storage.ui.theme.AppTheme
 private const val TAG = "MainActivity"
 
 /**
- * The main entry point of the application.
- * This activity serves as the initial screen, responsible for checking the user's sign-in status
- * and navigating them to the appropriate screen.
+ * The main entry point of the application, acting as a gatekeeper. This activity's primary
+ * responsibility is to verify the user's authentication status by checking for a stored UID in
+ * DataStore. Based on this, it either navigates the user to the `SignInActivity` or pre-loads
+ * their inventory data and presents them with an option to enter the main `StorageActivity`.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Enables edge-to-edge display for a more immersive UI.
+        // Enable edge-to-edge display to allow the app to draw behind system bars.
         enableEdgeToEdge()
         setContent {
             AppTheme {
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
-                    // Main layout column, centered both vertically and horizontally.
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
                             string = "Stash tracker",
                         )
                         Spacer(modifier = Modifier.height(24.dp))
-                        // The CheckUID composable handles the core logic for this screen.
+                        // The CheckUID composable encapsulates the core logic of this screen.
                         CheckUID()
                     }
                 }
@@ -76,8 +76,10 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * A composable function that checks the user's sign-in status and local data.
-     * It observes DataStore and decides whether to show the main menu or navigate to the sign-in screen.
+     * A stateful composable that handles the core logic of the MainActivity. It observes the user's
+     * UID and their stored data from DataStore. It then uses a `LaunchedEffect` to react to changes
+     * in this data, either by navigating to the sign-in screen or by populating an in-memory cache
+     * with the user's items.
      */
     @Composable
     fun CheckUID() {
@@ -85,45 +87,45 @@ class MainActivity : ComponentActivity() {
 
         // --- State Observation ---
 
-        // Observe the user's UID from DataStore.
-        // `collectAsState` transforms the Flow from DataStore into a Compose State.
-        // The composable will automatically recompose whenever the UID changes.
-        // "NOT SIGNED IN" is a temporary initial value before the first value is read from disk.
+        // Observe the user's UID from DataStore. `collectAsState` converts the Flow into a
+        // Compose State object, causing recomposition when the data changes.
+        // The initial value "NOT SIGNED IN" is a sentinel to manage the initial loading state.
         val savedUID by readLocalData(
             context,
             uidLocalPath
         ).collectAsState(initial = "NOT SIGNED IN")
 
-        // Observe the user's stored items from DataStore.
-        // We explicitly provide the type <LocalRowItem> because readLocalObjects is a generic function.
-        // The initial value is `null` because the data might not exist yet when the app starts.
+        // Observe the list of stored items. The type `<LocalRowItem>` is explicitly provided
+        // because `readLocalObjects` is a generic function. The initial value is `null` to represent
+        // the state where data has not yet been loaded.
         val savedData by readLocalObjects<LocalRowItem>(context, storageItemPath).collectAsState(initial = null)
 
         // --- Side Effects ---
 
-        // `LaunchedEffect` is used to perform side effects (like navigation or logging) in response to state changes.
-        // This block will run once when the composable enters the composition, a   nd again anytime `savedUID` or `savedData` changes.
+        // `LaunchedEffect` is crucial for performing actions like navigation or data caching in response
+        // to state changes, without blocking the UI thread. This effect will re-launch whenever
+        // `savedUID` or `savedData` changes.
         LaunchedEffect(savedUID, savedData) {
-            // If savedUID is null, it means the user has never signed in.
+            // If savedUID is null (after the initial read), it means the user has never signed in.
             if (savedUID == null) {
                 Log.d(TAG, "User is not signed in. Navigating to SignInActivity.")
                 val intent = Intent(context, SignInActivity::class.java)
                 context.startActivity(intent)
             }
 
-            // If savedData is not null, update the global in-memory cache.
-            // This is a side effect and must be done inside a LaunchedEffect.
+            // When `savedData` is successfully loaded (is not null), it updates the global
+            // `storageItems` in-memory cache. This makes the data immediately available to other parts
+            // of the app, like StorageActivity, without needing to read from disk again.
             savedData?.let { data ->
                 Log.d(TAG, "Successfully read ${data.size} items from local storage. Updating in-memory cache.")
                 storageItems = data.toMutableList()
             }
         }
 
-
         // --- UI Rendering ---
 
-        // Only show the "Open" button if the user is properly signed in.
-        // We check against "NOT SIGNED IN" to avoid showing the button during the brief initial loading state.
+        // The main menu button is only displayed if the user is confirmed to be signed in.
+        // The check prevents the button from appearing during the initial loading state.
         if (savedUID != null && savedUID != "NOT SIGNED IN") {
             MenuButton(
                 callback = { context.startActivity(Intent(context, StorageActivity::class.java)) },
@@ -139,7 +141,8 @@ class MainActivity : ComponentActivity() {
 // --- Reusable UI Components ---
 
 /**
- * A preview composable for visualizing the MainActivity UI in Android Studio.
+ * A preview composable for visualizing the MainActivity UI in Android Studio's design pane.
+ * This helps in rapidly iterating on the UI without needing to run the full app on a device.
  */
 @Preview(showSystemUi = true)
 @Composable
@@ -169,8 +172,9 @@ fun PagePreview() {
 }
 
 /**
- * A simple composable for displaying a large, centered title.
- * @param string The text to display in the title.
+ * A simple, reusable composable for displaying a large, centered title.
+ * @param string The text to be displayed.
+ * @param modifier The modifier to be applied to the Text composable.
  */
 @Composable
 fun Title(string: String, modifier: Modifier = Modifier) {
@@ -185,9 +189,9 @@ fun Title(string: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * A standardized button for navigating between activities.
- * @param callback The lambda function to execute when the button is clicked.
- * @param text The text to display on the button.
+ * A standardized, reusable button composable for primary navigation actions.
+ * @param callback The lambda function to be invoked when the button is clicked.
+ * @param text The string to be displayed on the button.
  */
 @Composable
 fun MenuButton(callback: () -> Unit, text: String) {
@@ -199,7 +203,7 @@ fun MenuButton(callback: () -> Unit, text: String) {
         Button(
             modifier = Modifier
                 .size(125.dp, 50.dp),
-            onClick = callback // Directly use the passed-in callback.
+            onClick = callback // The onClick action is passed in from the calling site.
         ) {
             Text(text = text, fontSize = 15.sp)
         }

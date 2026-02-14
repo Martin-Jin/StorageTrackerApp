@@ -11,17 +11,21 @@ import kotlinx.serialization.Serializable
 // --- Data Models ---
 
 /**
- * A data class representing a storage item for local serialization (saving to a file).
- * It holds the raw data for a storage item.
+ * A serializable data class representing a storage item as it is stored in persistent storage
+ * (like DataStore or Firebase). This class is designed for data transfer and persistence.
  *
- * It's a `data class` to ensure it has proper `equals()` and `hashCode()` implementations.
- * This is crucial for Compose's `collectAsState` to correctly detect when the data has actually changed,
- * preventing infinite recomposition loops.
+ * It is a `data class` to get auto-generated `equals()` and `hashCode()`, which is important for
+ * correctly comparing items and for efficient use in collections. The `@Serializable` annotation
+ * allows the Kotlinx Serialization library to convert instances of this class to and from JSON.
  *
- * @property name The name of the item (e.g., "Apples").
- * @property img The resource ID or file path of the item's image.
- * @property count The quantity of the item.
- * @property pgIndex The index of the tab (e.g., Fridge, Cabinet) where the item belongs.
+ * @property name The display name of the item (e.g., "Apples").
+ * @property img A string representing the item's image. This can be a local file path or a drawable resource ID.
+ * @property count The current quantity of the item.
+ * @property unit The unit of measurement for the count (e.g., "Kg", "pcs").
+ * @property pgIndex The zero-based index of the tab/page (e.g., Fridge, Cabinet) where this item is located.
+ * @property id A unique identifier for the item, crucial for list operations and database keys.
+ * @property decrement The amount the `count` should decrease by.
+ * @property decrementInterval The frequency in days at which the `decrement` is applied.
  */
 @Serializable
 data class LocalRowItem(
@@ -35,8 +39,8 @@ data class LocalRowItem(
     val decrementInterval: Int
 ) {
     /**
-     * Converts this data-centric `LocalRowItem` into a UI-centric `RowItem`.
-     * @return A `RowItem` instance ready to be displayed in the UI.
+     * Converts this data-layer `LocalRowItem` into a UI-layer `RowItem`.
+     * @return A `RowItem` instance ready to be used by the Compose UI.
      */
     fun toRowItem(): RowItem {
         return RowItem(
@@ -53,14 +57,19 @@ data class LocalRowItem(
 }
 
 /**
- * A class representing a storage item for use in the Jetpack Compose UI.
- * It uses Compose's `State` delegates (`mutableStateOf`, `mutableIntStateOf`) so that the UI
- * can automatically recompose when the item's properties (like `name` or `count`) change.
+ * A stateful class representing a single storage item within the Compose UI.
+ * This class is the "source of truth" for the UI layer. It uses Compose's `State` delegates
+ * (`mutableStateOf`, `mutableIntStateOf`) which allows any composable that reads these properties
+ * to automatically recompose whenever their values change, ensuring the UI is always up-to-date.
  *
- * @param initialName The starting name of the item.
- * @param initialImg The resource ID or file path of the item's image.
- * @param initialCount The starting quantity of the item.
- * @param initialPgIndex The index of the tab where the item belongs.
+ * @param initialName The starting name for the item when it's created.
+ * @param initialImg The default image resource or path.
+ * @param initialCount The starting quantity.
+ * @param initialUnit The starting unit of measurement.
+ * @param initialPgIndex The default tab index.
+ * @param id An optional existing ID. If not provided, a new unique one will be generated.
+ * @param decrement The amount the count decreases automatically.
+ * @param decrementInterval The period in days for the automatic decrement.
  */
 class RowItem(
     initialName: String = "New item",
@@ -68,12 +77,23 @@ class RowItem(
     initialCount: Int = 0,
     initialUnit: String = "Kg",
     initialPgIndex: Int = 0,
-    id: String? = null, // Changed to nullable
+    id: String? = null, // Nullable to allow for new item creation
     var decrement: Int = 1,
     var decrementInterval: Int = 1
 ) {
     companion object {
+        /**
+         * A global, observable state that holds the `RowItem` currently being edited.
+         * When this value is set to a `RowItem`, the `EditItemDialog` will appear.
+         * When it's set to `null`, the dialog is hidden.
+         */
         var itemToEdit = mutableStateOf<RowItem?>(null)
+
+        /**
+         * A private set to keep track of all `RowItem` IDs currently in use.
+         * This is used to ensure that any newly created `RowItem` gets a unique ID,
+         * which is essential for stable list management in Compose's `LazyColumn`.
+         */
         private val existingIds = mutableSetOf<String>()
     }
 
@@ -85,11 +105,13 @@ class RowItem(
     var pgIndex by mutableIntStateOf(initialPgIndex)
 
     init {
-        // Use passed id if it is not null and unique
+        // This block ensures every RowItem instance has a unique ID.
+        // If a valid, unique ID is passed during construction, it's used.
         if (id != null && existingIds.add(id)) {
             this.id = id
         } else {
-            // Otherwise, generate a new unique id
+            // Otherwise, generate a new unique ID by trying different combinations
+            // until an unused one is found and added to the set of existing IDs.
             var n = 1
             var tempId = "itemNum$n-P$initialPgIndex"
             while (!existingIds.add(tempId)) {
@@ -108,7 +130,7 @@ class RowItem(
     }
 
     /**
-     * Decreases the item count by the decrement value, but not below zero.
+     * Decreases the item count by the `decrement` value, ensuring it does not go below zero.
      */
     fun decreaseCount() {
         if (count > 0) {
@@ -120,8 +142,8 @@ class RowItem(
     }
 
     /**
-     * Converts this UI-centric `RowItem` into a data-centric `LocalRowItem` for saving.
-     * @return A `LocalRowItem` instance suitable for JSON serialization.
+     * Converts this UI-layer `RowItem` into a data-layer `LocalRowItem` for persistence.
+     * @return A `LocalRowItem` instance with the current data, ready for serialization.
      */
     fun toLocalRowItem(): LocalRowItem {
         return LocalRowItem(
@@ -136,6 +158,13 @@ class RowItem(
         )
     }
 
+    /**
+     * Calculates and applies the automatic decrement to the item's count based on the
+     * time elapsed since the app was last opened.
+     *
+     * @param last The timestamp (as a String) of the last time the app was opened.
+     * @param now The current timestamp (as a String).
+     */
     fun updateDecrement(last: String, now: String) {
         val lastMillis = last.toLongOrNull()
         val nowMillis = now.toLongOrNull()
@@ -146,16 +175,19 @@ class RowItem(
         }
 
         val diffInMillis = nowMillis - lastMillis
+        // Calculate the number of full days that have passed.
         val daysPassed = diffInMillis / (1000 * 60 * 60 * 24)
 
         Log.d("RowItem", "Days passed since last open for item '$name': $daysPassed")
 
         if (daysPassed > 0 && decrementInterval > 0) {
-            // Calculate how many times the decrement interval has passed
+            // Determine how many times the decrement interval has occurred.
             val timesToDecrement = daysPassed / decrementInterval
 
             if (timesToDecrement > 0) {
+                // Apply the total calculated decrement to the count.
                 val totalDecrement = (decrement * timesToDecrement).toInt()
+                // `coerceAtLeast(0)` ensures the count never drops below zero.
                 count = (count - totalDecrement).coerceAtLeast(0)
                 Log.d("RowItem", "Decremented '$name' by $totalDecrement over $daysPassed days. New count: $count")
             }

@@ -95,10 +95,13 @@ const val ITEMFONTSIZE = 17
 const val ROWBORDERRADIUS = 20
 
 /**
- * The main activity for displaying and managing storage items.
- * It sets up the Compose UI and initializes the list of items to be displayed.
+ * The primary activity for displaying and managing a user's inventory across different storage locations.
+ * This activity sets up the main Compose UI, which includes a tabbed layout for different storage
+ * areas (e.g., "Fridge", "Cabinet"), a list of items within each tab, and functionality for
+ * adding, editing, and deleting items. It also handles lifecycle events to persist data.
  */
 class StorageActivity : ComponentActivity() {
+    // A reactive list of `RowItem` objects that the UI will observe for changes.
     private val displayItems = mutableStateListOf<RowItem>()
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -106,23 +109,28 @@ class StorageActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         // --- State Initialization ---
-        // `mutableStateListOf` creates an observable list. Any composable that reads this list
-        // will automatically recompose when items are added or removed.
-        // The global `storageItems` list (from DataManagement.kt) is loaded in MainActivity.
-        // We convert the `LocalRowItem` objects to `RowItem` objects suitable for the UI.
+        // `mutableStateListOf` creates an observable list. Any composable that reads from this list
+        // will automatically recompose when its contents change (items are added, removed, or updated).
+        // The global `storageItems` list (from DataManagement.kt), loaded in MainActivity, is converted
+        // to UI-specific `RowItem` objects.
         displayItems.addAll(storageItems.map { it.toRowItem() })
 
         Log.d(TAG, "onCreate: Displaying ${displayItems.size} items from local storage.")
 
+        // This lifecycle scope automatically handles starting and stopping the coroutine
+        // in sync with the activity's lifecycle, preventing resource leaks.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.CREATED) {
+                // Read the timestamp of the last time the app was opened.
                 val last = readLocalData(this@StorageActivity, LAST_OPENED_KEY).firstOrNull()
                 val now = System.currentTimeMillis().toString()
                 if (last != null) {
+                    // If a last-opened time exists, update the decrement for each item.
                     for (item in displayItems) {
                         item.updateDecrement(last = last, now = now)
                     }
                 } else {
+                    // If it's the first time, just record the current time.
                     writeLocalData(
                         this@StorageActivity,
                         LAST_OPENED_KEY,
@@ -140,9 +148,11 @@ class StorageActivity : ComponentActivity() {
                 val bottomTabs = listOf(
                     { context.startActivity(Intent(context, MainActivity::class.java)) },
                     { context.startActivity(Intent(context, StorageActivity::class.java)) },
-                    { context.startActivity(Intent(context, StorageActivity::class.java)) }
+                    { context.startActivity(Intent(context, SettingActivity::class.java)) }
                 )
                 val tabIcons = listOf(R.drawable.homeicon, R.drawable.storage, R.drawable.options)
+
+                // Scaffold provides a standard layout structure for Material Design apps.
                 Scaffold(
                     bottomBar = {
                         NavigationBar(modifier = Modifier.height(60.dp)) {
@@ -151,39 +161,40 @@ class StorageActivity : ComponentActivity() {
                                     icon = {
                                         Icon(
                                             painter = painterResource(tabIcons[index]),
-                                            contentDescription = "icon"
+                                            contentDescription = "Bottom navigation icon"
                                         )
                                     },
                                     selected = activeBottomTab == index,
                                     onClick = {
+                                        activeBottomTab = index
                                         item()
                                     }
                                 )
                             }
-
                         }
                     },
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
                     Column(modifier = Modifier.padding(innerPadding)) {
-                        // The TopTab composable is the main UI for this screen.
                         Box {
+                            // `Tabs` is the main composable for the screen's primary content.
                             Tabs(allItems = displayItems)
-                            // The button to add a new item.
+                            // This button provides a way for the user to add a new item.
                             Button(
                                 shape = RoundedCornerShape(15.dp),
                                 contentPadding = PaddingValues(5.dp),
                                 modifier = Modifier
                                     .size(width = 90.dp, height = 90.dp)
                                     .padding(20.dp)
-                                    .align(Alignment.BottomEnd), onClick = {
+                                    .align(Alignment.BottomEnd),
+                                onClick = {
                                     val newRowItem = RowItem(initialName = "New item")
                                     displayItems.add(newRowItem)
                                     itemToEdit.value = newRowItem
                                 }) {
                                 Icon(
                                     painter = painterResource(R.drawable.plus),
-                                    contentDescription = "icon"
+                                    contentDescription = "Add new item"
                                 )
                             }
                         }
@@ -193,6 +204,10 @@ class StorageActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * When the activity is paused (e.g., user navigates away), this function is called
+     * to save the current state of the `displayItems` list to persistent storage.
+     */
     override fun onPause() {
         super.onPause()
         updateStoredItems(this, lifecycleScope, displayItems)
@@ -201,9 +216,12 @@ class StorageActivity : ComponentActivity() {
 
 // --- Main UI Composable ---
 /**
- * The main composable that organizes the UI with a tabbed layout.
- * It manages the currently selected tab and displays the corresponding items.
- * @param allItems The observable list of items to display and manage.
+ * The core composable that organizes the UI using a tabbed layout. It manages the state
+ * of the currently selected tab and uses a `HorizontalPager` to allow for swipeable
+ * navigation between the different storage locations.
+ *
+ * @param modifier A `Modifier` passed from the parent.
+ * @param allItems The observable list of all storage items, which will be filtered for each tab.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -212,10 +230,10 @@ fun Tabs(
     allItems: SnapshotStateList<RowItem>,
 ) {
     val tabs = listOf("Fridge", "Cabinet", "Others")
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
-
+    val pagerState = rememberPagerState(initialPage = 0) { tabs.size }
     val coroutineScope = rememberCoroutineScope()
 
+    // The dialog for editing an item is defined here but only shown when `itemToEdit.value` is not null.
     EditItemDialog(
         itemToEdit = itemToEdit.value,
         onDismiss = { itemToEdit.value = null },
@@ -225,7 +243,7 @@ fun Tabs(
     )
 
     Column(modifier.fillMaxSize()) {
-        // The TabRow UI component.
+        // The `SecondaryScrollableTabRow` provides the tab navigation UI.
         SecondaryScrollableTabRow(
             selectedTabIndex = pagerState.currentPage,
             divider = { },
@@ -234,6 +252,7 @@ fun Tabs(
                     Tab(
                         selected = pagerState.currentPage == index,
                         onClick = {
+                            // Animate to the selected tab when clicked.
                             coroutineScope.launch {
                                 pagerState.animateScrollToPage(index)
                             }
@@ -241,6 +260,7 @@ fun Tabs(
                         text = { Text(title) },
                     )
                 }
+                // A button for adding a new tab category in the future.
                 Button(
                     modifier = Modifier
                         .height(15.dp)
@@ -250,18 +270,17 @@ fun Tabs(
                     onClick = {},
                 )
                 {
-                    Text(
-                        text = "New tab",
-                    )
+                    Text(text = "New tab")
                 }
-
             }
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // HorizontalPager for swipeable screens
+        // `HorizontalPager` provides the swipeable content area for each tab.
         HorizontalPager(state = pagerState, modifier = modifier.fillMaxSize()) { page ->
+            // `derivedStateOf` is a performance optimization. The filter operation only
+            // re-runs if `allItems` or `page` changes.
             val itemsToShow by remember { derivedStateOf { allItems.filter { it.pgIndex == page } } }
             StorageScreen(
                 allItems = allItems,
@@ -271,17 +290,24 @@ fun Tabs(
     }
 }
 
+/**
+ * A composable that displays a list of storage items for a single tab.
+ * It uses a `LazyColumn` for efficiently displaying a potentially long, scrollable list.
+ *
+ * @param itemsToShow The filtered list of items to display on this screen.
+ * @param allItems The complete list of all items, passed down to be modified by child composables.
+ */
 @Composable
 fun StorageScreen(
     itemsToShow: List<RowItem>,
     allItems: SnapshotStateList<RowItem>,
 ) {
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // By providing a key, we help Compose understand which items are which, improving performance.
+        // Providing a unique `key` for each item helps Compose optimize recompositions,
+        // especially when the list changes (items are added, removed, or reordered).
         items(
             items = itemsToShow,
             key = { item -> item.id }
@@ -293,14 +319,16 @@ fun StorageScreen(
             )
         }
     }
-
 }
 
 /**
- * A single row in the list, representing one storage item.
- * @param rowItem The item to display.
- * @param onDelete A callback to execute when this item should be deleted.
- * @param onEdit A callback to set the item to be edited.
+ * A composable representing a single row in the storage item list. It displays the item's
+ * image, name, and quantity, and provides controls for modifying the count and accessing
+ * a dropdown menu for editing or deleting the item.
+ *
+ * @param rowItem The `RowItem` data to display.
+ * @param onDelete A callback lambda to be executed when the user chooses to delete this item.
+ * @param onEdit A callback lambda to set the globally observed `itemToEdit`, triggering the edit dialog.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -310,7 +338,10 @@ fun ItemRow(
     onEdit: (RowItem) -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    // `remember` with `rowItem.img` as a key ensures the image model is re-evaluated
+    // only when the image path for this specific item changes.
     val imageModel = remember(rowItem.img) {
+        // Handle both local file paths and drawable resource IDs.
         rowItem.img.toIntOrNull() ?: File(rowItem.img)
     }
 
@@ -322,16 +353,12 @@ fun ItemRow(
                 .fillMaxWidth()
                 .padding(vertical = 4.dp, horizontal = 25.dp)
                 .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = {
-                            showMenu = true
-                        }
-                    )
+                    // Open the dropdown menu on a simple tap.
+                    detectTapGestures(onTap = { showMenu = true })
                 }
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Asynchronously load and display the item's image using Coil.
                 Image(
                     painter = rememberAsyncImagePainter(model = imageModel),
                     contentDescription = rowItem.name,
@@ -352,6 +379,7 @@ fun ItemRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
+                    // `basicMarquee` provides a scrolling animation if the item name is too long.
                     Text(
                         text = rowItem.name,
                         fontSize = ITEMFONTSIZE.sp,
@@ -364,6 +392,7 @@ fun ItemRow(
                     modifier = Modifier.padding(end = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Buttons to increment and decrement the item count.
                     Button(
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.secondary,
@@ -395,6 +424,7 @@ fun ItemRow(
             }
         }
 
+        // The dropdown menu is anchored to the `Box` and is only expanded when `showMenu` is true.
         DropdownMenu(
             expanded = showMenu,
             onDismissRequest = { showMenu = false },
@@ -419,10 +449,12 @@ fun ItemRow(
 
 // --- Helper Composable & Previews ---
 /**
- * A dialog for editing the name and count of an item.
- * @param itemToEdit The item being edited.
- * @param onDismiss Callback for when the dialog is dismissed.
- * @param onSave Callback for when the user confirms their edits.
+ * A comprehensive dialog for creating or editing a storage item. It provides text fields for all
+ * item properties, a dropdown for selecting the page/tab, and an image picker.
+ *
+ * @param itemToEdit The `RowItem` to be edited. If `null`, the dialog is not shown.
+ * @param onDismiss A callback to dismiss the dialog without saving changes.
+ * @param onSave A callback to save the changes and dismiss the dialog.
  */
 @Composable
 fun EditItemDialog(
@@ -430,10 +462,11 @@ fun EditItemDialog(
     onDismiss: () -> Unit,
     onSave: () -> Unit
 ) {
-    if (itemToEdit == null) {
-        return
-    }
+    if (itemToEdit == null) return
+
     val context = LocalContext.current
+    // Using `remember` with `itemToEdit.id` as a key ensures that the dialog's state
+    // resets correctly when a different item is selected for editing.
     var nameText by remember(itemToEdit.id) { mutableStateOf(itemToEdit.name) }
     var countText by remember(itemToEdit.id) { mutableStateOf(itemToEdit.count.toString()) }
     var unitText by remember(itemToEdit.id) { mutableStateOf(itemToEdit.unit) }
@@ -442,10 +475,12 @@ fun EditItemDialog(
     var decrementText by remember(itemToEdit.id) { mutableStateOf(itemToEdit.decrement.toString()) }
     var decrementIntervalText by remember(itemToEdit.id) { mutableStateOf(itemToEdit.decrementInterval.toString()) }
 
+    // `rememberLauncherForActivityResult` is the modern way to handle activity results in Compose.
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri: Uri? ->
             uri?.let {
+                // Save the selected image to internal storage and update the image path state.
                 val imagePath = saveImageFromUri(context, it)
                 if (imagePath != null) {
                     imgText = imagePath
@@ -498,7 +533,7 @@ fun EditItemDialog(
                         value = decrementIntervalText,
                         onValueChange = { decrementIntervalText = it },
                         label = { Text("Days") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -506,21 +541,13 @@ fun EditItemDialog(
                     Text("Page:")
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Button(onClick = { expanded = true }) {
-                            Text(pgIndex.toString())
-                        }
-                        DropdownMenu(
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false }
-                        ) {
+                        Button(onClick = { expanded = true }) { Text(pgIndex.toString()) }
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                             pages.forEach { page ->
-                                DropdownMenuItem(
-                                    text = { Text(page.toString()) },
-                                    onClick = {
-                                        pgIndex = page
-                                        expanded = false
-                                    }
-                                )
+                                DropdownMenuItem(text = { Text(page.toString()) }, onClick = {
+                                    pgIndex = page
+                                    expanded = false
+                                })
                             }
                         }
                     }
@@ -538,12 +565,10 @@ fun EditItemDialog(
             }
         },
         confirmButton = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
                 Button(
                     onClick = {
+                        // When saved, update the original `RowItem` with the new values from the dialog's state.
                         itemToEdit.name = nameText
                         itemToEdit.count = countText.toIntOrNull() ?: 0
                         itemToEdit.unit = unitText
@@ -571,6 +596,11 @@ fun EditItemDialog(
     )
 }
 
+/**
+ * A preview for the `StorageScreen` composable, allowing for quick UI iteration in Android Studio.
+ * This preview simulates the main layout of the activity, including the bottom navigation and a
+ * sample set of items, without needing to run the full application.
+ */
 @Preview(showBackground = true)
 @Composable
 fun StorageScreenPreview() {
@@ -580,7 +610,7 @@ fun StorageScreenPreview() {
         val bottomTabs = listOf(
             { context.startActivity(Intent(context, MainActivity::class.java)) },
             { context.startActivity(Intent(context, StorageActivity::class.java)) },
-            { context.startActivity(Intent(context, StorageActivity::class.java)) }
+            { context.startActivity(Intent(context, SettingActivity::class.java)) }
         )
         val tabIcons = listOf(R.drawable.homeicon, R.drawable.storage, R.drawable.options)
         Scaffold(
@@ -595,20 +625,17 @@ fun StorageScreenPreview() {
                                 )
                             },
                             selected = activeBottomTab == index,
-                            onClick = {
-                                item()
-                            }
+                            onClick = { item() }
                         )
                     }
-
                 }
             },
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
-
             Column(modifier = Modifier.padding(innerPadding)) {
                 Box {
-                    // The TopTab composable is the main UI for this screen.
+                    // The `Tabs` composable is the main UI for this screen.
+                    // `@SuppressLint` is used here because this is a preview and we don't need to remember the state.
                     @SuppressLint("UnrememberedMutableState")
                     Tabs(allItems = mutableStateListOf(RowItem()))
 
@@ -618,7 +645,8 @@ fun StorageScreenPreview() {
                         modifier = Modifier
                             .size(width = 90.dp, height = 90.dp)
                             .padding(20.dp)
-                            .align(Alignment.BottomEnd), onClick = {
+                            .align(Alignment.BottomEnd),
+                        onClick = {
                             val newRowItem = RowItem(initialName = "New item")
                             itemToEdit.value = newRowItem
                         }) {
@@ -628,10 +656,7 @@ fun StorageScreenPreview() {
                         )
                     }
                 }
-
             }
-
         }
     }
-
 }
