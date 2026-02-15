@@ -37,24 +37,7 @@ data class LocalRowItem(
     val id: String,
     val decrement: Int = 1,
     val decrementInterval: Int
-) {
-    /**
-     * Converts this data-layer `LocalRowItem` into a UI-layer `RowItem`.
-     * @return A `RowItem` instance ready to be used by the Compose UI.
-     */
-    fun toRowItem(): RowItem {
-        return RowItem(
-            initialName = this.name,
-            initialImg = this.img,
-            initialCount = this.count,
-            initialUnit = this.unit,
-            initialPgIndex = this.pgIndex,
-            id = this.id,
-            decrement = this.decrement,
-            decrementInterval = this.decrementInterval
-        )
-    }
-}
+)
 
 /**
  * A stateful class representing a single storage item within the Compose UI.
@@ -81,6 +64,21 @@ class RowItem(
     var decrement: Int = 1,
     var decrementInterval: Int = 1
 ) {
+    /**
+     * Secondary constructor to create a UI-layer `RowItem` directly from a data-layer `LocalRowItem`.
+     * This simplifies the conversion from persisted data to UI state.
+     */
+    constructor(localItem: LocalRowItem) : this(
+        initialName = localItem.name,
+        initialImg = localItem.img,
+        initialCount = localItem.count,
+        initialUnit = localItem.unit,
+        initialPgIndex = localItem.pgIndex,
+        id = localItem.id,
+        decrement = localItem.decrement,
+        decrementInterval = localItem.decrementInterval
+    )
+
     companion object {
         /**
          * A global, observable state that holds the `RowItem` currently being edited.

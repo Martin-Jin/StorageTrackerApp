@@ -30,11 +30,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
@@ -50,12 +48,17 @@ const val TAG = "DataManagement"
 /**
  * The preference key used to store the main list of storage items in Jetpack DataStore.
  */
-const val storageItemPath = "storageItems"
+const val STORAGEITEMPATH = "storageItems"
 
 /**
  * The preference key used to store the current user's unique ID (UID) in DataStore.
  */
-const val uidLocalPath = "UID"
+const val UIDLOCALPATH = "UID"
+
+/**
+ * The preference key used to store the tabs the user created.
+ */
+const val TABITEMSPATH = "storageTabs"
 
 /**
  * The preference key for storing the timestamp of when the app was last opened.
@@ -64,11 +67,12 @@ const val uidLocalPath = "UID"
 const val LAST_OPENED_KEY = "last_opened"
 
 /**
- * An in-memory cache of the user's storage items (`LocalRowItem`).
+ * An in-memory cache of variables that are written and read.
  * This list is loaded when the application starts to provide immediate access to the data
  * for the UI, avoiding delays from repeated asynchronous data reads.
  */
 var storageItems = mutableListOf<LocalRowItem>()
+var tabItems = mutableListOf<TabItem>()
 
 /**
  * A shared, configured instance of the Kotlinx JSON serializer.
@@ -76,7 +80,10 @@ var storageItems = mutableListOf<LocalRowItem>()
  * (like a count of 0 or an empty string) are explicitly included in the output JSON.
  * This prevents data loss when an object is serialized and then deserialized.
  */
-val json = Json { encodeDefaults = true }
+val json = Json {
+    encodeDefaults = true
+    ignoreUnknownKeys = true
+}
 
 /**
  * A private extension property on `Context` that provides a singleton instance of `DataStore`.
@@ -102,7 +109,10 @@ suspend inline fun <reified T> writeLocalObjects(
     key: String,
     objectsToSave: List<T>
 ) {
-    Log.d(TAG, "Writing (${objectsToSave.size} objects) to key '$key'. This will overwrite existing data.")
+    Log.d(
+        TAG,
+        "Writing (${objectsToSave.size} objects) to key '$key'. This will overwrite existing data."
+    )
     val jsonString = json.encodeToString(objectsToSave)
     Log.d(TAG, "JSON to write: $jsonString")
     writeLocalData(context, key, jsonString)
@@ -158,7 +168,10 @@ inline fun <reified T> readLocalObjects(context: Context, key: String): Flow<Lis
     val stringFlow = readLocalData(context, key)
     return stringFlow.map { jsonString ->
         if (jsonString != null) {
-            Log.d(TAG, "Successfully read ${jsonString.length} chars from key '$key'. Deserializing...")
+            Log.d(
+                TAG,
+                "Successfully read ${jsonString.length} chars from key '$key'. Deserializing..."
+            )
             json.decodeFromString<List<T>>(jsonString)
         } else {
             Log.d(TAG, "No data found for key '$key' in readLocalObjects.")
@@ -193,46 +206,6 @@ fun readLocalData(context: Context, key: String): Flow<String?> {
 }
 
 // --- Business Logic Functions ---
-
-/**
- * A specific business logic function to save the current state of the UI's `RowItem` list.
- * It first converts the UI-layer `RowItem` objects into data-layer `LocalRowItem` objects,
- * which are designed for serialization, and then writes them to local storage.
- *
- * @param context The context required for DataStore access.
- * @param scope A `CoroutineScope` to launch the asynchronous save operation.
- * @param rowItems The list of `RowItem` objects from the UI to be saved.
- * @param overWrite If `true`, the entire existing list in storage is replaced.
- *                  If `false`, the new items are appended to the existing list.
- */
-fun updateStoredItems(
-    context: Context,
-    scope: CoroutineScope,
-    rowItems: MutableList<RowItem>,
-    overWrite: Boolean = true,
-) {
-    val localRowItems = mutableListOf<LocalRowItem>()
-    for (item in rowItems) {
-        localRowItems.add(item.toLocalRowItem())
-    }
-    scope.launch {
-        if (overWrite) {
-            Log.i(TAG, "Updating stored items with OVERWRITE.")
-            writeLocalObjects(
-                context,
-                storageItemPath,
-                localRowItems
-            )
-        } else {
-            Log.i(TAG, "Updating stored items with APPEND.")
-            appendObjects(
-                context,
-                storageItemPath,
-                localRowItems
-            )
-        }
-    }
-}
 
 /**
  * Copies an image from a given content URI (e.g., from a photo gallery) to the app's private

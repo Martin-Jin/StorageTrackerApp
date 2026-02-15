@@ -1,6 +1,7 @@
 package com.martin.storage
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -68,6 +69,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -76,15 +78,24 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import coil.compose.rememberAsyncImagePainter
+import com.martin.storage.data.DisplayTabItem
 import com.martin.storage.data.LAST_OPENED_KEY
+import com.martin.storage.data.LocalRowItem
 import com.martin.storage.data.RowItem
 import com.martin.storage.data.RowItem.Companion.itemToEdit
+import com.martin.storage.data.STORAGEITEMPATH
+import com.martin.storage.data.TABITEMSPATH
+import com.martin.storage.data.TAG
+import com.martin.storage.data.TabItem
+import com.martin.storage.data.appendObjects
 import com.martin.storage.data.readLocalData
 import com.martin.storage.data.saveImageFromUri
 import com.martin.storage.data.storageItems
-import com.martin.storage.data.updateStoredItems
+import com.martin.storage.data.tabItems
 import com.martin.storage.data.writeLocalData
+import com.martin.storage.data.writeLocalObjects
 import com.martin.storage.ui.theme.AppTheme
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.io.File
@@ -93,6 +104,7 @@ import java.io.File
 private const val TAG = "StorageActivity"
 const val ITEMFONTSIZE = 17
 const val ROWBORDERRADIUS = 20
+const val EDGEPADDING = 25
 
 /**
  * The primary activity for displaying and managing a user's inventory across different storage locations.
@@ -103,6 +115,8 @@ const val ROWBORDERRADIUS = 20
 class StorageActivity : ComponentActivity() {
     // A reactive list of `RowItem` objects that the UI will observe for changes.
     private val displayItems = mutableStateListOf<RowItem>()
+    private val tabs = mutableStateListOf<DisplayTabItem>()
+
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,10 +126,12 @@ class StorageActivity : ComponentActivity() {
         // `mutableStateListOf` creates an observable list. Any composable that reads from this list
         // will automatically recompose when its contents change (items are added, removed, or updated).
         // The global `storageItems` list (from DataManagement.kt), loaded in MainActivity, is converted
-        // to UI-specific `RowItem` objects.
-        displayItems.addAll(storageItems.map { it.toRowItem() })
+        // to UI-specific `RowItem` objects. The same for other variables to save
+        displayItems.addAll(storageItems.map { RowItem(it) })
+        tabs.addAll(tabItems.map { DisplayTabItem(it) })
 
-        Log.d(TAG, "onCreate: Displaying ${displayItems.size} items from local storage.")
+        Log.d(TAG, "onCreate: Displaying ${displayItems.size} items for storage.")
+        Log.d(TAG, "onCreate: Displaying ${tabs.size} items for tabs.")
 
         // This lifecycle scope automatically handles starting and stopping the coroutine
         // in sync with the activity's lifecycle, preventing resource leaks.
@@ -176,9 +192,25 @@ class StorageActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
                     Column(modifier = Modifier.padding(innerPadding)) {
+                        Row(
+                            modifier = Modifier
+                                .padding(start = EDGEPADDING.dp, top = 10.dp)
+                                .fillMaxWidth()
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Stash",
+                                    fontSize = 18.sp,
+                                    modifier = Modifier.padding(0.dp),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(text = "Total: ${displayItems.size} items", fontSize = 14.sp)
+                            }
+
+                        }
                         Box {
                             // `Tabs` is the main composable for the screen's primary content.
-                            Tabs(allItems = displayItems)
+                            Tabs(allItems = displayItems, tabs = tabs)
                             // This button provides a way for the user to add a new item.
                             Button(
                                 shape = RoundedCornerShape(15.dp),
@@ -206,11 +238,24 @@ class StorageActivity : ComponentActivity() {
 
     /**
      * When the activity is paused (e.g., user navigates away), this function is called
-     * to save the current state of the `displayItems` list to persistent storage.
+     * to save user data.
      */
     override fun onPause() {
         super.onPause()
-        updateStoredItems(this, lifecycleScope, displayItems)
+        // Converting to the appropriate types
+        val localRowItems = mutableListOf<LocalRowItem>()
+        for (item in displayItems) {
+            localRowItems.add(item.toLocalRowItem())
+        }
+
+        val tabsToSave = mutableListOf<TabItem>()
+        for (tab in tabs) {
+            tabsToSave.add(tab.toTabItem())
+        }
+
+        // Saving values
+        updateStoredValue(this, lifecycleScope, localRowItems, STORAGEITEMPATH)
+        updateStoredValue(this, lifecycleScope, tabsToSave, TABITEMSPATH)
     }
 }
 
@@ -228,8 +273,8 @@ class StorageActivity : ComponentActivity() {
 fun Tabs(
     modifier: Modifier = Modifier,
     allItems: SnapshotStateList<RowItem>,
+    tabs: SnapshotStateList<DisplayTabItem>
 ) {
-    val tabs = listOf("Fridge", "Cabinet", "Others")
     val pagerState = rememberPagerState(initialPage = 0) { tabs.size }
     val coroutineScope = rememberCoroutineScope()
 
@@ -248,29 +293,30 @@ fun Tabs(
             selectedTabIndex = pagerState.currentPage,
             divider = { },
             tabs = {
-                tabs.forEachIndexed { index, title ->
+                for (tab in tabs) {
                     Tab(
-                        selected = pagerState.currentPage == index,
+                        modifier = Modifier.heightIn(max = 40.dp),
+                        selected = pagerState.currentPage == tab.index,
                         onClick = {
                             // Animate to the selected tab when clicked.
                             coroutineScope.launch {
-                                pagerState.animateScrollToPage(index)
+                                pagerState.animateScrollToPage(tab.index)
                             }
                         },
-                        text = { Text(title) },
+                        text = { Text(text = tab.name, fontSize = 15.sp) },
                     )
                 }
                 // A button for adding a new tab category in the future.
                 Button(
                     modifier = Modifier
-                        .height(15.dp)
-                        .padding(7.dp)
+                        .heightIn(max = 15.dp)
+                        .padding(top = 4.dp, start = 8.dp, end = 8.dp, bottom = 4.dp)
                         .clip(RoundedCornerShape(ROWBORDERRADIUS.dp)),
                     contentPadding = PaddingValues(5.dp),
                     onClick = {},
                 )
                 {
-                    Text(text = "New tab")
+                    Text(text = "New")
                 }
             }
         )
@@ -349,9 +395,9 @@ fun ItemRow(
         Card(
             shape = RoundedCornerShape(ROWBORDERRADIUS.dp),
             modifier = Modifier
-                .heightIn(0.dp, 70.dp)
+                .heightIn(0.dp, 62.5.dp)
                 .fillMaxWidth()
-                .padding(vertical = 4.dp, horizontal = 25.dp)
+                .padding(vertical = 4.dp, horizontal = EDGEPADDING.dp)
                 .pointerInput(Unit) {
                     // Open the dropdown menu on a simple tap.
                     detectTapGestures(onTap = { showMenu = true })
@@ -383,6 +429,7 @@ fun ItemRow(
                     Text(
                         text = rowItem.name,
                         fontSize = ITEMFONTSIZE.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         modifier = Modifier.basicMarquee()
                     )
@@ -408,6 +455,7 @@ fun ItemRow(
                         "${rowItem.count} ${rowItem.unit}",
                         maxLines = 1,
                         fontSize = (ITEMFONTSIZE * 0.9).sp,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.width(8.dp))
 
@@ -597,6 +645,41 @@ fun EditItemDialog(
 }
 
 /**
+ * Creates a coroutine scope to write data to storage.
+ *
+ * @param context The context required for DataStore access.
+ * @param scope A `CoroutineScope` to launch the asynchronous save operation.
+ * @param itemsToSave The list of objects from the UI to be saved.
+ * @param overWrite If `true`, the entire existing list in storage is replaced.
+ *                  If `false`, the new items are appended to the existing list.
+ */
+inline fun <reified T> updateStoredValue(
+    context: Context,
+    scope: CoroutineScope,
+    itemsToSave: MutableList<T>,
+    key: String,
+    overWrite: Boolean = true,
+) {
+    scope.launch {
+        if (overWrite) {
+            Log.i(TAG, "Updating stored items with OVERWRITE.")
+            writeLocalObjects(
+                context,
+                key,
+                itemsToSave
+            )
+        } else {
+            Log.i(TAG, "Updating stored items with APPEND.")
+            appendObjects(
+                context,
+                key,
+                itemsToSave
+            )
+        }
+    }
+}
+
+/**
  * A preview for the `StorageScreen` composable, allowing for quick UI iteration in Android Studio.
  * This preview simulates the main layout of the activity, including the bottom navigation and a
  * sample set of items, without needing to run the full application.
@@ -633,11 +716,33 @@ fun StorageScreenPreview() {
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
             Column(modifier = Modifier.padding(innerPadding)) {
+                Row(
+                    modifier = Modifier
+                        .padding(start = EDGEPADDING.dp, top = 10.dp)
+                        .fillMaxWidth()
+                ) {
+                    Column {
+                        Text(
+                            text = "Stash",
+                            fontSize = 18.sp,
+                            modifier = Modifier.padding(0.dp),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(text = "Total: 1 items", fontSize = 14.sp)
+                    }
+
+                }
                 Box {
                     // The `Tabs` composable is the main UI for this screen.
-                    // `@SuppressLint` is used here because this is a preview and we don't need to remember the state.
+                    // `@SuppressLint` is used here because this is a preview, and we don't need to remember the state.
                     @SuppressLint("UnrememberedMutableState")
-                    Tabs(allItems = mutableStateListOf(RowItem()))
+                    Tabs(
+                        allItems = mutableStateListOf(RowItem()),
+                        tabs = mutableStateListOf(
+                            DisplayTabItem("Fridge", 0),
+                            DisplayTabItem("Fridge", 0), DisplayTabItem("Fridge", 0)
+                        )
+                    )
 
                     Button(
                         shape = RoundedCornerShape(15.dp),
@@ -647,8 +752,6 @@ fun StorageScreenPreview() {
                             .padding(20.dp)
                             .align(Alignment.BottomEnd),
                         onClick = {
-                            val newRowItem = RowItem(initialName = "New item")
-                            itemToEdit.value = newRowItem
                         }) {
                         Icon(
                             painter = painterResource(R.drawable.plus),

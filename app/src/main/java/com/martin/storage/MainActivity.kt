@@ -30,11 +30,14 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.martin.storage.data.LocalRowItem
+import com.martin.storage.data.STORAGEITEMPATH
+import com.martin.storage.data.TABITEMSPATH
+import com.martin.storage.data.TabItem
+import com.martin.storage.data.UIDLOCALPATH
 import com.martin.storage.data.readLocalData
 import com.martin.storage.data.readLocalObjects
-import com.martin.storage.data.storageItemPath
 import com.martin.storage.data.storageItems
-import com.martin.storage.data.uidLocalPath
+import com.martin.storage.data.tabItems
 import com.martin.storage.ui.theme.AppTheme
 
 // --- Constants ---
@@ -67,75 +70,104 @@ class MainActivity : ComponentActivity() {
                             string = "Stash tracker",
                         )
                         Spacer(modifier = Modifier.height(24.dp))
-                        // The CheckUID composable encapsulates the core logic of this screen.
-                        CheckUID()
+                        // The ReadSavedValues composable encapsulates the core logic for this screen.
+                        ReadSavedValues()
                     }
                 }
             }
         }
     }
+}
 
-    /**
-     * A stateful composable that handles the core logic of the MainActivity. It observes the user's
-     * UID and their stored data from DataStore. It then uses a `LaunchedEffect` to react to changes
-     * in this data, either by navigating to the sign-in screen or by populating an in-memory cache
-     * with the user's items.
-     */
-    @Composable
-    fun CheckUID() {
-        val context = LocalContext.current
+/**
+ * A generic, reusable composable to load data from DataStore and cache it.
+ * It observes a Flow of objects, and whenever the data is successfully loaded,
+ * it calls the `onDataLoaded` lambda with the result.
+ *
+ * @param T The reified type of objects to load (e.g., LocalRowItem).
+ * @param path The key for the data in DataStore.
+ * @param onDataLoaded A callback function to execute when the data is loaded.
+ */
+@Composable
+inline fun <reified T : Any> LoadAndCache(
+    path: String,
+    crossinline onDataLoaded: (List<T>) -> Unit
+) {
+    val context = LocalContext.current
+    val dataState by readLocalObjects<T>(context, path).collectAsState(initial = null)
 
-        // --- State Observation ---
+    LaunchedEffect(dataState) {
+        dataState?.let(onDataLoaded)
+    }
+}
 
-        // Observe the user's UID from DataStore. `collectAsState` converts the Flow into a
-        // Compose State object, causing recomposition when the data changes.
-        // The initial value "NOT SIGNED IN" is a sentinel to manage the initial loading state.
-        val savedUID by readLocalData(
-            context,
-            uidLocalPath
-        ).collectAsState(initial = "NOT SIGNED IN")
+/**
+ * A stateful composable that handles the core logic of the MainActivity. It observes the user's
+ * UID and their stored data from DataStore. It then uses a `LaunchedEffect` to react to changes
+ * in this data, either by navigating to the sign-in screen or by populating an in-memory cache
+ * with the user's items.
+ */
+@Composable
+fun ReadSavedValues() {
+    val context = LocalContext.current
 
-        // Observe the list of stored items. The type `<LocalRowItem>` is explicitly provided
-        // because `readLocalObjects` is a generic function. The initial value is `null` to represent
-        // the state where data has not yet been loaded.
-        val savedData by readLocalObjects<LocalRowItem>(context, storageItemPath).collectAsState(initial = null)
+    // --- State Observation ---
 
-        // --- Side Effects ---
+    // Observe the user's UID from DataStore. `collectAsState` converts the Flow into a
+    // Compose State object, causing recomposition when the data changes.
+    // The initial value "NOT SIGNED IN" is a sentinel to manage the initial loading state.
+    val savedUID by readLocalData(
+        context,
+        UIDLOCALPATH
+    ).collectAsState(initial = "NOT SIGNED IN")
 
-        // `LaunchedEffect` is crucial for performing actions like navigation or data caching in response
-        // to state changes, without blocking the UI thread. This effect will re-launch whenever
-        // `savedUID` or `savedData` changes.
-        LaunchedEffect(savedUID, savedData) {
-            // If savedUID is null (after the initial read), it means the user has never signed in.
-            if (savedUID == null) {
-                Log.d(TAG, "User is not signed in. Navigating to SignInActivity.")
-                val intent = Intent(context, SignInActivity::class.java)
-                context.startActivity(intent)
-            }
+    // --- Data Loading ---
+    // By explicitly providing the type parameter <LocalRowItem>, we tell LoadAndCache exactly
+    // what to deserialize. This avoids the type erasure crash.
+    LoadAndCache<LocalRowItem>(path = STORAGEITEMPATH) { data ->
+        Log.d(TAG, "Successfully read ${data.size} items from $STORAGEITEMPATH. Updating in-memory cache.")
+        // Re-assign the global variable to update the in-memory cache.
+        storageItems = data.toMutableList()
+    }
 
-            // When `savedData` is successfully loaded (is not null), it updates the global
-            // `storageItems` in-memory cache. This makes the data immediately available to other parts
-            // of the app, like StorageActivity, without needing to read from disk again.
-            savedData?.let { data ->
-                Log.d(TAG, "Successfully read ${data.size} items from local storage. Updating in-memory cache.")
-                storageItems = data.toMutableList()
-            }
+    // A separate, explicit call is needed for each different type of data to be loaded.
+    LoadAndCache<TabItem>(path = TABITEMSPATH) { data ->
+        Log.d(TAG, "Successfully read ${data.size} tabs from $TABITEMSPATH. Updating in-memory cache.")
+        tabItems = data.toMutableList()
+    }
+
+    // --- Side Effects ---
+
+    // `LaunchedEffect` is crucial for performing actions like navigation in response to state changes.
+    // This effect will re-launch whenever `savedUID` changes.
+    LaunchedEffect(savedUID, tabItems) {
+        // If savedUID is null (after the initial read), it means the user has never signed in.
+        if (savedUID == null) {
+            Log.d(TAG, "User is not signed in. Navigating to SignInActivity.")
+            val intent = Intent(context, SignInActivity::class.java)
+            context.startActivity(intent)
         }
-
-        // --- UI Rendering ---
-
-        // The main menu button is only displayed if the user is confirmed to be signed in.
-        // The check prevents the button from appearing during the initial loading state.
-        if (savedUID != null && savedUID != "NOT SIGNED IN") {
-            MenuButton(
-                callback = { context.startActivity(Intent(context, StorageActivity::class.java)) },
-                text = "Open"
+        if (tabItems.isEmpty()) {
+            tabItems = mutableListOf(
+                TabItem("Fridge", 0),
+                TabItem("Cabinet", 1), TabItem("Other", 2)
             )
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(text = "Signed in as: $savedUID", fontSize = 16.sp)
     }
+
+    // --- UI Rendering ---
+
+    // The main menu button is only displayed if the user is confirmed to be signed in.
+    // The check prevents the button from appearing during the initial loading state.
+    if (savedUID != null && savedUID != "NOT SIGNED IN") {
+        MenuButton(
+            callback = { context.startActivity(Intent(context, StorageActivity::class.java)) },
+            text = "Open"
+        )
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+    Text(text = "Signed in as: $savedUID", fontSize = 16.sp)
 }
 
 // --- Reusable UI Components ---

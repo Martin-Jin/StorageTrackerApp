@@ -26,7 +26,7 @@ import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
-import com.martin.storage.data.uidLocalPath
+import com.martin.storage.data.UIDLOCALPATH
 import com.martin.storage.data.write
 import com.martin.storage.data.writeLocalData
 import com.martin.storage.ui.theme.AppTheme
@@ -104,7 +104,7 @@ fun handleSignIn(result: GetCredentialResponse, context: Context, scope: Corouti
                             context.startActivity(intent)
                             // Asynchronously save the user's UID to the local DataStore for session persistence.
                             scope.launch {
-                                writeLocalData(context, uidLocalPath, uid)
+                                writeLocalData(context, UIDLOCALPATH, uid)
                             }
                         } else {
                             Log.e(TAG, "Failed to write to remote database", exception)
