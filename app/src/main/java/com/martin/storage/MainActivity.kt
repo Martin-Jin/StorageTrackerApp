@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
                         Title(
                             string = "Stash tracker",
                         )
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
                         // The ReadSavedValues composable encapsulates the core logic for this screen.
                         ReadSavedValues()
                     }
@@ -125,14 +125,20 @@ fun ReadSavedValues() {
     // By explicitly providing the type parameter <LocalRowItem>, we tell LoadAndCache exactly
     // what to deserialize. This avoids the type erasure crash.
     LoadAndCache<LocalRowItem>(path = STORAGEITEMPATH) { data ->
-        Log.d(TAG, "Successfully read ${data.size} items from $STORAGEITEMPATH. Updating in-memory cache.")
+        Log.d(
+            TAG,
+            "Successfully read ${data.size} items from $STORAGEITEMPATH. Updating in-memory cache."
+        )
         // Re-assign the global variable to update the in-memory cache.
         storageItems = data.toMutableList()
     }
 
     // A separate, explicit call is needed for each different type of data to be loaded.
     LoadAndCache<TabItem>(path = TABITEMSPATH) { data ->
-        Log.d(TAG, "Successfully read ${data.size} tabs from $TABITEMSPATH. Updating in-memory cache.")
+        Log.d(
+            TAG,
+            "Successfully read ${data.size} tabs from $TABITEMSPATH. Updating in-memory cache."
+        )
         tabItems = data.toMutableList()
     }
 
@@ -166,7 +172,7 @@ fun ReadSavedValues() {
         )
     }
 
-    Spacer(modifier = Modifier.height(16.dp))
+    Spacer(modifier = Modifier.height(20.dp))
     Text(text = "Signed in as: $savedUID", fontSize = 16.sp)
 }
 
@@ -234,7 +240,7 @@ fun MenuButton(callback: () -> Unit, text: String) {
     ) {
         Button(
             modifier = Modifier
-                .size(125.dp, 50.dp),
+                .size(125.dp, 45.dp),
             onClick = callback // The onClick action is passed in from the calling site.
         ) {
             Text(text = text, fontSize = 15.sp)

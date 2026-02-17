@@ -2,7 +2,6 @@ package com.martin.storage
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -44,8 +43,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryScrollableTabRow
 import androidx.compose.material3.Tab
@@ -69,6 +66,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
@@ -95,6 +95,7 @@ import com.martin.storage.data.tabItems
 import com.martin.storage.data.writeLocalData
 import com.martin.storage.data.writeLocalObjects
 import com.martin.storage.ui.theme.AppTheme
+import com.martin.storage.ui.theme.BottomNavigation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -102,9 +103,10 @@ import java.io.File
 
 // --- Constants ---
 private const val TAG = "StorageActivity"
-const val ITEMFONTSIZE = 17
+const val ITEMFONTSIZE = 16
 const val ROWBORDERRADIUS = 20
-const val EDGEPADDING = 25
+const val EDGEPADDING = 20
+const val TOPPADDING = 10
 
 /**
  * The primary activity for displaying and managing a user's inventory across different storage locations.
@@ -159,52 +161,33 @@ class StorageActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AppTheme {
-                var activeBottomTab by remember { mutableIntStateOf(1) }
-                val context = LocalContext.current
-                val bottomTabs = listOf(
-                    { context.startActivity(Intent(context, MainActivity::class.java)) },
-                    { context.startActivity(Intent(context, StorageActivity::class.java)) },
-                    { context.startActivity(Intent(context, SettingActivity::class.java)) }
-                )
-                val tabIcons = listOf(R.drawable.homeicon, R.drawable.storage, R.drawable.options)
-
                 // Scaffold provides a standard layout structure for Material Design apps.
                 Scaffold(
                     bottomBar = {
-                        NavigationBar(modifier = Modifier.height(60.dp)) {
-                            bottomTabs.forEachIndexed { index, item ->
-                                NavigationBarItem(
-                                    icon = {
-                                        Icon(
-                                            painter = painterResource(tabIcons[index]),
-                                            contentDescription = "Bottom navigation icon"
-                                        )
-                                    },
-                                    selected = activeBottomTab == index,
-                                    onClick = {
-                                        activeBottomTab = index
-                                        item()
-                                    }
-                                )
-                            }
-                        }
+                        BottomNavigation(activeTab = 1)
                     },
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
                     Column(modifier = Modifier.padding(innerPadding)) {
                         Row(
                             modifier = Modifier
-                                .padding(start = EDGEPADDING.dp, top = 10.dp)
+                                .padding(start = EDGEPADDING.dp, top = TOPPADDING.dp)
                                 .fillMaxWidth()
                         ) {
                             Column {
                                 Text(
                                     text = "Stash",
-                                    fontSize = 18.sp,
-                                    modifier = Modifier.padding(0.dp),
-                                    fontWeight = FontWeight.Bold
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    style = TextStyle(
+                                        platformStyle = PlatformTextStyle(
+                                            includeFontPadding = false,
+                                        ),
+                                    ),
                                 )
-                                Text(text = "Total: ${displayItems.size} items", fontSize = 14.sp)
+                                Text(
+                                    text = "Total: ${displayItems.size} items", fontSize = 15.sp,
+                                )
                             }
 
                         }
@@ -685,33 +668,13 @@ inline fun <reified T> updateStoredValue(
  * sample set of items, without needing to run the full application.
  */
 @Preview(showBackground = true)
+@OptIn(ExperimentalTextApi::class)
 @Composable
 fun StorageScreenPreview() {
     AppTheme {
-        var activeBottomTab by remember { mutableIntStateOf(1) }
-        val context = LocalContext.current
-        val bottomTabs = listOf(
-            { context.startActivity(Intent(context, MainActivity::class.java)) },
-            { context.startActivity(Intent(context, StorageActivity::class.java)) },
-            { context.startActivity(Intent(context, SettingActivity::class.java)) }
-        )
-        val tabIcons = listOf(R.drawable.homeicon, R.drawable.storage, R.drawable.options)
         Scaffold(
             bottomBar = {
-                NavigationBar(modifier = Modifier.height(60.dp)) {
-                    bottomTabs.forEachIndexed { index, item ->
-                        NavigationBarItem(
-                            icon = {
-                                Icon(
-                                    painter = painterResource(tabIcons[index]),
-                                    contentDescription = "icon"
-                                )
-                            },
-                            selected = activeBottomTab == index,
-                            onClick = { item() }
-                        )
-                    }
-                }
+                BottomNavigation(activeTab = 1)
             },
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
@@ -724,11 +687,22 @@ fun StorageScreenPreview() {
                     Column {
                         Text(
                             text = "Stash",
-                            fontSize = 18.sp,
-                            modifier = Modifier.padding(0.dp),
-                            fontWeight = FontWeight.Bold
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            style = TextStyle(
+                                platformStyle = PlatformTextStyle(
+                                    includeFontPadding = false,
+                                ),
+                            ),
                         )
-                        Text(text = "Total: 1 items", fontSize = 14.sp)
+                        Text(
+                            text = "Total: 1 items", fontSize = 15.sp,
+                            style = TextStyle(
+                                platformStyle = PlatformTextStyle(
+                                    includeFontPadding = false,
+                                ),
+                            ),
+                        )
                     }
 
                 }
