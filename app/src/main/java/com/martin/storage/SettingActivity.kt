@@ -47,18 +47,18 @@ data class SubtitleItem(val text: String) : SettingItem()
 
 val settingsItems = listOf(
     ButtonItem("Account", R.drawable.account_circle, {}),
-    ButtonItem("Privacy & Security", R.drawable.privacy, {}),
+    ButtonItem("Security", R.drawable.privacy, {}),
     ButtonItem("Notifications", R.drawable.notifications, {}),
     DividerItem,
-    SubtitleItem("Customization 1"),
-    ButtonItem("Appearance1", R.drawable.brush, {}),
-    ButtonItem("Appearance2", R.drawable.brush, {}),
-    ButtonItem("Appearance3", R.drawable.brush, {}),
+    SubtitleItem("Customization"),
+    ButtonItem("Appearance", R.drawable.brush, {}),
+    ButtonItem("Placeholder", R.drawable.placeholder, {}),
+    ButtonItem("Placeholder", R.drawable.placeholder, {}),
     DividerItem,
-    SubtitleItem("Customization 2"),
-    ButtonItem("Appearance4", R.drawable.brush, {}),
-    ButtonItem("Appearance5", R.drawable.brush, {}),
-    ButtonItem("Appearance6", R.drawable.brush, {}),
+    SubtitleItem("Utility"),
+    ButtonItem("Low stock items", R.drawable.checklist, {}),
+    ButtonItem("Placeholder", R.drawable.placeholder, {}),
+    ButtonItem("Placeholder", R.drawable.placeholder, {}),
     DividerItem,
     ButtonItem("About", R.drawable.copyright, {})
 )

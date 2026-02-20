@@ -79,6 +79,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import coil.compose.rememberAsyncImagePainter
 import com.martin.storage.data.DisplayTabItem
+import com.martin.storage.data.DisplayTabItem.Companion.tabToEdit
 import com.martin.storage.data.LAST_OPENED_KEY
 import com.martin.storage.data.LocalRowItem
 import com.martin.storage.data.RowItem
@@ -270,6 +271,12 @@ fun Tabs(
         }
     )
 
+    // The dialog for editing a tab is defined here but only shown when `tabToEdit.value` is not null.
+    EditTabDialogue(
+        tabToEdit.value,
+        onDismiss = { tabToEdit.value = null },
+        onSave = { itemToEdit.value = null })
+
     Column(modifier.fillMaxSize()) {
         // The `SecondaryScrollableTabRow` provides the tab navigation UI.
         SecondaryScrollableTabRow(
@@ -277,16 +284,49 @@ fun Tabs(
             divider = { },
             tabs = {
                 for (tab in tabs) {
+                    var showMenu by remember { mutableStateOf(false) }
                     Tab(
-                        modifier = Modifier.heightIn(max = 40.dp),
+                        modifier = Modifier
+                            .heightIn(max = 40.dp),
                         selected = pagerState.currentPage == tab.index,
                         onClick = {
-                            // Animate to the selected tab when clicked.
                             coroutineScope.launch {
                                 pagerState.animateScrollToPage(tab.index)
                             }
                         },
-                        text = { Text(text = tab.name, fontSize = 15.sp) },
+                        text = {
+                            Text(
+                                modifier = Modifier.pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onLongPress = { showMenu = true },
+                                        onTap = {
+                                            coroutineScope.launch {
+                                                pagerState.animateScrollToPage(tab.index)
+                                            }
+                                        }
+                                    )
+                                }, text = tab.name, fontSize = 15.sp
+                            )
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Delete") },
+                                    onClick = {
+                                        tabs.remove(tab)
+                                        showMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Edit") },
+                                    onClick = {
+                                        tabToEdit.value = tab
+                                        showMenu = false
+                                    }
+                                )
+                            }
+                        },
                     )
                 }
                 // A button for adding a new tab category in the future.
@@ -296,7 +336,9 @@ fun Tabs(
                         .padding(top = 4.dp, start = 8.dp, end = 8.dp, bottom = 4.dp)
                         .clip(RoundedCornerShape(ROWBORDERRADIUS.dp)),
                     contentPadding = PaddingValues(5.dp),
-                    onClick = {},
+                    onClick = {
+                        tabs.add(DisplayTabItem("Tab", tabs.size))
+                    },
                 )
                 {
                     Text(text = "New")
@@ -317,6 +359,52 @@ fun Tabs(
             )
         }
     }
+}
+
+@Composable
+fun EditTabDialogue(tabToEdit: DisplayTabItem?, onDismiss: () -> Unit, onSave: () -> Unit) {
+
+    if (tabToEdit == null) return
+    var tabName by remember { mutableStateOf(tabToEdit.name) }
+
+    AlertDialog(
+        modifier = Modifier.padding(horizontal = 13.dp),
+        onDismissRequest = { onDismiss() },
+        title = { Text(text = "Edit tab") },
+        text = {
+            Column {
+                TextField(
+                    value = tabName,
+                    onValueChange = { tabName = it },
+                    label = { Text("Name") },
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                Button(
+                    onClick = {
+                        // When saved, update the original `RowItem` with the new values from the dialog's state.
+                        tabToEdit.name = tabName
+                        onSave()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red,
+                        contentColor = Color.White
+                    )
+                ) { Text(text = "Save") }
+                Spacer(Modifier.width(15.dp))
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red,
+                        contentColor = Color.White
+                    )
+                ) { Text(text = "Cancel") }
+            }
+        }
+    )
 }
 
 /**
@@ -341,7 +429,7 @@ fun StorageScreen(
             items = itemsToShow,
             key = { item -> item.id }
         ) { item ->
-            ItemRow(
+            RowItemUI(
                 rowItem = item,
                 onDelete = { allItems.remove(item) },
                 onEdit = { itemToEdit.value = it }
@@ -361,7 +449,7 @@ fun StorageScreen(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ItemRow(
+fun RowItemUI(
     rowItem: RowItem,
     onDelete: () -> Unit,
     onEdit: (RowItem) -> Unit
@@ -393,7 +481,7 @@ fun ItemRow(
                     contentDescription = rowItem.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .width((ROWBORDERRADIUS * 3.5).dp)
+                        .width((ROWBORDERRADIUS * 3.9).dp)
                         .fillMaxHeight()
                         .clip(
                             RoundedCornerShape(
@@ -426,7 +514,7 @@ fun ItemRow(
                     Button(
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.secondary,
-                            contentColor = Color.White
+                            contentColor = MaterialTheme.colorScheme.inverseOnSurface
                         ),
                         onClick = { rowItem.increaseCount() },
                         modifier = Modifier.size(25.dp),
@@ -445,7 +533,7 @@ fun ItemRow(
                     Button(
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.secondary,
-                            contentColor = Color.White
+                            contentColor = MaterialTheme.colorScheme.inverseOnSurface
                         ),
                         onClick = { rowItem.decreaseCount() },
                         modifier = Modifier.size(25.dp),
@@ -524,6 +612,7 @@ fun EditItemDialog(
     val pages = listOf(0, 1, 2)
 
     AlertDialog(
+        modifier = Modifier.padding(horizontal = 13.dp),
         onDismissRequest = onDismiss,
         title = { Text(text = "Edit Item") },
         text = {
@@ -555,7 +644,7 @@ fun EditItemDialog(
                         onValueChange = { decrementText = it },
                         label = { Text("Decrement") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(150.dp)
+                        modifier = Modifier.width(130.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("every")
@@ -567,12 +656,18 @@ fun EditItemDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Page:")
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(13.dp))
                     Column {
-                        Button(onClick = { expanded = true }) { Text(pgIndex.toString()) }
+                        Button(
+                            onClick = { expanded = true },
+                            contentPadding = PaddingValues(5.dp),
+                            modifier = Modifier
+                                .width(30.dp)
+                                .height(30.dp)
+                        ) { Text(pgIndex.toString()) }
                         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                             pages.forEach { page ->
                                 DropdownMenuItem(text = { Text(page.toString()) }, onClick = {
@@ -582,16 +677,18 @@ fun EditItemDialog(
                             }
                         }
                     }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                TextField(
-                    value = imgText,
-                    onValueChange = { imgText = it },
-                    label = { Text("Image URI / Resource ID") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
-                )
-                Button(onClick = { imagePicker.launch("image/*") }) {
-                    Text("Upload Image")
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text("Image:")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { imagePicker.launch("image/*") },
+                        contentPadding = PaddingValues(5.dp),
+                        modifier = Modifier
+                            .width(65.dp)
+                            .height(30.dp)
+                    ) {
+                        Text("Upload")
+                    }
                 }
             }
         },
@@ -610,7 +707,7 @@ fun EditItemDialog(
                         onSave()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary,
+                        containerColor = Color.Red,
                         contentColor = Color.White
                     )
                 ) { Text(text = "Save") }
@@ -618,7 +715,7 @@ fun EditItemDialog(
                 Button(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary,
+                        containerColor = Color.Red,
                         contentColor = Color.White
                     )
                 ) { Text(text = "Cancel") }

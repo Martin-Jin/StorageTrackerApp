@@ -25,6 +25,9 @@ class DisplayTabItem(
     initialName: String = "New tab",
     initialIndex: Int
 ) {
+    companion object {
+        var tabToEdit = mutableStateOf<DisplayTabItem?>(null)
+    }
     /**
      * Secondary constructor to create a UI-layer `DisplayTabItem` directly from a data-layer `TabItem`.
      * This simplifies the conversion from persisted data to UI state.
