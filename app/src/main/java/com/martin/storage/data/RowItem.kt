@@ -51,6 +51,7 @@ data class LocalRowItem(
  * @param initialUnit The starting unit of measurement.
  * @param initialPgIndex The default tab index.
  * @param id An optional existing ID. If not provided, a new unique one will be generated.
+ * @param display Whether item is displayed. Used for search.
  * @param decrement The amount the count decreases automatically.
  * @param decrementInterval The period in days for the automatic decrement.
  */
@@ -58,9 +59,10 @@ class RowItem(
     initialName: String = "New item",
     initialImg: String = R.drawable.sunflowers.toString(),
     initialCount: Int = 0,
-    initialUnit: String = "Kg",
+    initialUnit: String = "",
     initialPgIndex: Int = 0,
     id: String? = null, // Nullable to allow for new item creation
+    var display: Boolean = true,
     var decrement: Int = 1,
     var decrementInterval: Int = 1
 ) {

@@ -30,9 +30,11 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
@@ -116,6 +118,41 @@ suspend inline fun <reified T> writeLocalObjects(
     val jsonString = json.encodeToString(objectsToSave)
     Log.d(TAG, "JSON to write: $jsonString")
     writeLocalData(context, key, jsonString)
+}
+
+/**
+ * Creates a coroutine scope to write data to storage.
+ *
+ * @param context The context required for DataStore access.
+ * @param scope A `CoroutineScope` to launch the asynchronous save operation.
+ * @param itemsToSave The list of objects from the UI to be saved.
+ * @param overWrite If `true`, the entire existing list in storage is replaced.
+ *                  If `false`, the new items are appended to the existing list.
+ */
+inline fun <reified T> updateStoredValue(
+    context: Context,
+    scope: CoroutineScope,
+    itemsToSave: MutableList<T>,
+    key: String,
+    overWrite: Boolean = true,
+) {
+    scope.launch {
+        if (overWrite) {
+            Log.i(TAG, "Updating stored items with OVERWRITE.")
+            writeLocalObjects(
+                context,
+                key,
+                itemsToSave
+            )
+        } else {
+            Log.i(TAG, "Updating stored items with APPEND.")
+            appendObjects(
+                context,
+                key,
+                itemsToSave
+            )
+        }
+    }
 }
 
 /**
