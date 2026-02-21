@@ -26,25 +26,61 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.martin.storage.data.stashLists
 import com.martin.storage.ui.theme.AppTheme
 import com.martin.storage.ui.theme.BottomNavigation
 import com.martin.storage.ui.theme.TopTitle
 
 // --- Constants ---
 private const val TAG = "SettingActivity"
-const val BUTTONHEIGHT = 2
 
 // --- Data Models for Settings ---
+
+/**
+ * A sealed class representing a setting item.
+ * Using a sealed class allows for a restricted set of types that can be a `SettingItem`.
+ */
 sealed class SettingItem
-data class ButtonItem(val text: String, val icon: Int, val onClick: () -> Unit) : SettingItem()
+
+/**
+ * A data class representing a button in the settings screen.
+ *
+ * @param text The text to display on the button.
+ * @param icon The drawable resource ID for the icon.
+ * @param onClick The lambda to execute when the button is clicked.
+ */
+data class ButtonItem(val text: String, val icon: Int = 0, val onClick: () -> Unit) : SettingItem()
+
+/**
+ * A singleton object representing a divider in the settings list.
+ */
 object DividerItem : SettingItem()
+
+/**
+ * A data class representing a subtitle in the settings screen.
+ *
+ * @param text The text to display as a subtitle.
+ */
 data class SubtitleItem(val text: String) : SettingItem()
 
+/**
+ * A data class representing a list item in the settings screen.
+ *
+ * @param text The text to display on the button.
+ */
+data class ListItem(val text: String) : SettingItem()
+
+/**
+ * A predefined list of setting items to be displayed on the settings screen.
+ * This list defines the structure and content of the settings page.
+ */
 val settingsItems = listOf(
     ButtonItem("Account", R.drawable.account_circle, {}),
     ButtonItem("Security", R.drawable.privacy, {}),
@@ -52,13 +88,12 @@ val settingsItems = listOf(
     DividerItem,
     SubtitleItem("Customization"),
     ButtonItem("Appearance", R.drawable.brush, {}),
-    ButtonItem("Placeholder", R.drawable.placeholder, {}),
-    ButtonItem("Placeholder", R.drawable.placeholder, {}),
     DividerItem,
     SubtitleItem("Utility"),
     ButtonItem("Low stock items", R.drawable.checklist, {}),
-    ButtonItem("Placeholder", R.drawable.placeholder, {}),
-    ButtonItem("Placeholder", R.drawable.placeholder, {}),
+    DividerItem,
+    SubtitleItem("Lists"),
+    ListItem("List"),
     DividerItem,
     ButtonItem("About", R.drawable.copyright, {})
 )
@@ -97,10 +132,16 @@ class SettingActivity : ComponentActivity() {
                                         onClick = item.onClick
                                     )
 
+                                    is ListItem ->
+                                        for (list in stashLists) {
+                                            SettingButton(
+                                                text = list.pgName,
+                                                icon = R.drawable.label,
+                                                onClick = { }
+                                            )
+                                        }
                                     is DividerItem -> HorizontalDivider()
-                                    is SubtitleItem -> {
-                                        SettingSubTitle(item.text)
-                                    }
+                                    is SubtitleItem -> SettingSubTitle(item.text)
                                 }
                             }
                         }
@@ -111,23 +152,32 @@ class SettingActivity : ComponentActivity() {
     }
 }
 
+/**
+ * A composable that displays a setting button with an icon and text.
+ *
+ * @param modifier The modifier to be applied to the button.
+ * @param text The text to display on the button.
+ * @param icon The drawable resource ID for the icon.
+ * @param onClick The lambda to execute when the button is clicked.
+ */
 @Composable
 fun SettingButton(modifier: Modifier = Modifier, text: String, icon: Int, onClick: () -> Unit) {
     Button(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = BUTTONHEIGHT.dp, horizontal = 0.dp),
+            .fillMaxWidth(),
         onClick = onClick,
         contentPadding = PaddingValues(start = EDGEPADDING.dp, bottom = 0.dp, top = 0.dp),
         colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                painter = painterResource(id = icon),
-                contentDescription = text,
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.width(8.dp))
+            if (icon != 0) {
+                Icon(
+                    painter = painterResource(id = icon),
+                    contentDescription = text,
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
             Text(
                 modifier = Modifier.fillMaxWidth(),
                 text = text,
@@ -139,30 +189,42 @@ fun SettingButton(modifier: Modifier = Modifier, text: String, icon: Int, onClic
     }
 }
 
+/**
+ * A composable that displays a subtitle for a group of settings.
+ *
+ * @param text The text to display as the subtitle.
+ */
 @Composable
 fun SettingSubTitle(text: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 10.dp, bottom = 4.dp),
+            .padding(top = 10.dp),
         verticalAlignment = Alignment.CenterVertically
 
     ) {
-
         Text(
             text = text,
             fontSize = (ITEMFONTSIZE - 1).sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
+            style = TextStyle(
+                platformStyle = PlatformTextStyle(
+                    includeFontPadding = false,
+                ),
+            ),
             modifier = Modifier
                 .padding(
                     start = EDGEPADDING.dp,
                 )
-                .fillMaxSize()
+                .fillMaxWidth()
         )
     }
 }
 
+/**
+ * A preview for the settings screen.
+ */
 @Preview
 @Composable
 fun PreviewSettings() {
@@ -176,7 +238,7 @@ fun PreviewSettings() {
         ) { innerPadding ->
 
             Column(modifier = Modifier.padding(innerPadding)) {
-                TopTitle(text = "Settings")
+                TopTitle(text = "Features")
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -188,11 +250,16 @@ fun PreviewSettings() {
                                 icon = item.icon,
                                 onClick = item.onClick
                             )
-
+                            is ListItem ->
+                                for (list in stashLists) {
+                                    SettingButton(
+                                        text = list.pgName,
+                                        icon = 0,
+                                        onClick = { }
+                                    )
+                                }
                             is DividerItem -> HorizontalDivider()
-                            is SubtitleItem -> {
-                                SettingSubTitle(item.text)
-                            }
+                            is SubtitleItem -> SettingSubTitle(item.text)
                         }
                     }
                 }
@@ -200,4 +267,3 @@ fun PreviewSettings() {
         }
     }
 }
-

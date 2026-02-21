@@ -37,19 +37,17 @@ import kotlinx.coroutines.launch
 private const val TAG = "GoogleSignIn"
 
 /**
- * This activity manages the user authentication flow using Google Sign-In.
- * It leverages the Android Credential Manager API for a streamlined and modern sign-in experience.
- * The process is initiated as soon as the activity is created, and upon successful authentication,
- * the user's unique ID is stored both locally and remotely, before navigating to the MainActivity.
+ * This activity manages user authentication via Google Sign-In, using the Android Credential Manager API
+ * for a streamlined experience. The sign-in process is initiated upon creation, and on successful
+ * authentication, the user's unique ID is stored locally and remotely before navigating to `MainActivity`.
  */
 class SignInActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Enable edge-to-edge display for a modern, immersive UI.
+        // Enable edge-to-edge display for an immersive UI.
         enableEdgeToEdge()
         setContent {
-            // The `signIn` function is a non-composable function that kicks off the entire sign-in process.
-            // It's called here to trigger the Google Sign-In prompt as soon as the UI is composed.
+            // The `signIn` function initiates the sign-in process as soon as the UI is composed.
             signIn(LocalContext.current, rememberCoroutineScope())
 
             AppTheme {
@@ -73,36 +71,29 @@ class SignInActivity : ComponentActivity() {
 }
 
 /**
- * Processes the successful response from the Credential Manager after the user has signed in.
- * It validates the credential, extracts the Google ID token, saves the user's UID to remote and
- * local databases, and navigates to the main part of the application.
+ * Processes the successful response from the Credential Manager after sign-in.
+ * It validates the credential, extracts the Google ID token, saves the user's UID, and navigates
+ * to the main application.
  *
- * @param result The `GetCredentialResponse` object containing the user's credential information.
- * @param context The application context, used for starting a new activity and accessing DataStore.
- * @param scope A CoroutineScope to launch asynchronous data-saving operations.
+ * @param result The `GetCredentialResponse` object with the user's credential.
+ * @param context The application context for starting a new activity and accessing DataStore.
+ * @param scope A `CoroutineScope` to launch asynchronous data-saving operations.
  */
 fun handleSignIn(result: GetCredentialResponse, context: Context, scope: CoroutineScope) {
     when (val credential = result.credential) {
-        // This block handles a successful sign-in with a Google ID token.
         is CustomCredential -> {
             if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 try {
-                    // Attempt to create a verifiable GoogleIdTokenCredential from the response data.
                     val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
                     Log.d(TAG, "Google ID token successfully retrieved.")
 
-                    // --- Post-Sign-In Logic ---
-                    // Use the first 20 characters of the token as a stable, unique user ID.
                     val uid = googleIdTokenCredential.idToken.take(20)
 
-                    // Write a welcome message to the remote Firebase database under the user's UID.
                     write("users/${uid}", "New user!!") { success, exception ->
                         if (success) {
                             Log.d(TAG, "Successfully wrote user data to remote database.")
                             val intent = Intent(context, MainActivity::class.java)
-                            // On successful remote write, navigate the user to the main activity.
                             context.startActivity(intent)
-                            // Asynchronously save the user's UID to the local DataStore for session persistence.
                             scope.launch {
                                 writeLocalData(context, UIDLOCALPATH, uid)
                             }
@@ -118,7 +109,6 @@ fun handleSignIn(result: GetCredentialResponse, context: Context, scope: Corouti
             }
         }
 
-        // This block handles any other unexpected credential types.
         else -> {
             Log.e(TAG, "Unexpected credential type received: ${credential.type}")
         }
@@ -126,26 +116,22 @@ fun handleSignIn(result: GetCredentialResponse, context: Context, scope: Corouti
 }
 
 /**
- * Configures the specific options for the Google Sign-In request.
- * This tells the Credential Manager how to handle the Google Sign-In prompt.
+ * Configures the options for the Google Sign-In request.
  *
- * @return A `GetGoogleIdOption` object containing the configured settings.
+ * @return A `GetGoogleIdOption` object with the configured settings.
  */
 fun getGoogleIdOption(): GetGoogleIdOption {
     return GetGoogleIdOption.Builder()
-        // `setFilterByAuthorizedAccounts(false)` ensures that all Google accounts on the device are available to the user in the account selection prompt.
         .setFilterByAuthorizedAccounts(false)
-        // This is the server client ID from your Google Cloud project, which is essential for authenticating your backend with Google.
         .setServerClientId("104775339818-9b5ti4kua8strcmktvbe3i1s96ocf1ea.apps.googleusercontent.com")
-        // `setAutoSelectEnabled(true)` allows for a faster, one-tap sign-in experience if the user has previously used this app with a single Google account.
         .setAutoSelectEnabled(true)
         .build()
 }
 
 /**
- * Builds the final request object for the Credential Manager, bundling all authentication methods.
+ * Builds the final request object for the Credential Manager.
  *
- * @return A `GetCredentialRequest` that includes the configured Google ID option, ready to be sent.
+ * @return A `GetCredentialRequest` ready to be sent.
  */
 fun getRequest(): GetCredentialRequest {
     return GetCredentialRequest.Builder()
@@ -154,28 +140,24 @@ fun getRequest(): GetCredentialRequest {
 }
 
 /**
- * The core function that initiates the Google Sign-In process by calling the Credential Manager API.
- * It launches the sign-in UI and handles the result or any exceptions that occur.
+ * Initiates the Google Sign-In process by calling the Credential Manager API.
+ * It launches the sign-in UI and handles the result or any exceptions.
  *
  * @param context The application context.
- * @param scope A CoroutineScope is required to call the `getCredential` suspend function.
+ * @param scope A `CoroutineScope` for calling the `getCredential` suspend function.
  */
 fun signIn(context: Context, scope: CoroutineScope) {
     val credentialManager = CredentialManager.create(context)
     scope.launch {
         try {
-            // Launch the Credential Manager UI. This is a suspend function that waits for the user's action.
             val result = credentialManager.getCredential(
                 request = getRequest(),
                 context = context,
             )
-            // On successful credential acquisition, pass the result to the handler function.
             handleSignIn(result, context, scope)
         } catch (e: GetCredentialCancellationException) {
-            // This catch block handles the case where the user explicitly cancels the sign-in flow (e.g., by pressing the back button).
             Log.e(TAG, "Sign-in was cancelled by the user.", e)
         } catch (e: GetCredentialException) {
-            // This is a general catch block for other potential errors during the sign-in process, such as network issues or misconfigurations.
             Log.e(TAG, "Sign-in failed with an unexpected credential error.", e)
         }
     }

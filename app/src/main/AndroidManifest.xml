@@ -13,7 +13,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Test">
         <activity
-            android:name="com.martin.storage.StorageActivity"
+            android:name="com.martin.storage.StashActivity"
             android:exported="false" />
         <activity
             android:name="com.martin.storage.SignInActivity"

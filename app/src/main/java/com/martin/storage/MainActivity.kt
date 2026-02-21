@@ -29,30 +29,27 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.martin.storage.data.LocalRowItem
 import com.martin.storage.data.STORAGEITEMPATH
-import com.martin.storage.data.TABITEMSPATH
-import com.martin.storage.data.TabItem
+import com.martin.storage.data.StashList
 import com.martin.storage.data.UIDLOCALPATH
 import com.martin.storage.data.readLocalData
 import com.martin.storage.data.readLocalObjects
-import com.martin.storage.data.storageItems
-import com.martin.storage.data.tabItems
+import com.martin.storage.data.stashLists
 import com.martin.storage.ui.theme.AppTheme
 
 // --- Constants ---
 private const val TAG = "MainActivity"
 
 /**
- * The main entry point of the application, acting as a gatekeeper. This activity's primary
- * responsibility is to verify the user's authentication status by checking for a stored UID in
- * DataStore. Based on this, it either navigates the user to the `SignInActivity` or pre-loads
- * their inventory data and presents them with an option to enter the main `StorageActivity`.
+ * The main entry point of the application, responsible for checking the user's authentication status.
+ * This activity verifies if a user ID (UID) is stored in DataStore and, based on that, either
+ * navigates to `SignInActivity` or pre-loads inventory data and provides an entry point to the main
+ * `StorageActivity`.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Enable edge-to-edge display to allow the app to draw behind system bars.
+        // Enable edge-to-edge display to allow content to draw behind system bars.
         enableEdgeToEdge()
         setContent {
             AppTheme {
@@ -70,7 +67,7 @@ class MainActivity : ComponentActivity() {
                             string = "Stash tracker",
                         )
                         Spacer(modifier = Modifier.height(14.dp))
-                        // The ReadSavedValues composable encapsulates the core logic for this screen.
+                        // This composable handles the core logic for this screen.
                         ReadSavedValues()
                     }
                 }
@@ -80,13 +77,12 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * A generic, reusable composable to load data from DataStore and cache it.
- * It observes a Flow of objects, and whenever the data is successfully loaded,
- * it calls the `onDataLoaded` lambda with the result.
+ * A generic, reusable composable for loading and caching data from DataStore.
+ * It observes a Flow of objects and invokes the `onDataLoaded` callback when data is successfully loaded.
  *
- * @param T The reified type of objects to load (e.g., LocalRowItem).
+ * @param T The reified type of objects to load (e.g., `LocalRowItem`).
  * @param path The key for the data in DataStore.
- * @param onDataLoaded A callback function to execute when the data is loaded.
+ * @param onDataLoaded A callback function to execute when data is loaded.
  */
 @Composable
 inline fun <reified T : Any> LoadAndCache(
@@ -102,72 +98,44 @@ inline fun <reified T : Any> LoadAndCache(
 }
 
 /**
- * A stateful composable that handles the core logic of the MainActivity. It observes the user's
- * UID and their stored data from DataStore. It then uses a `LaunchedEffect` to react to changes
- * in this data, either by navigating to the sign-in screen or by populating an in-memory cache
- * with the user's items.
+ * A stateful composable that manages the core logic of `MainActivity`.
+ * It observes the user's UID and stored data from DataStore and uses a `LaunchedEffect` to react to
+ * changes, either by navigating to the sign-in screen or by populating the in-memory cache.
  */
 @Composable
 fun ReadSavedValues() {
     val context = LocalContext.current
 
-    // --- State Observation ---
-
     // Observe the user's UID from DataStore. `collectAsState` converts the Flow into a
-    // Compose State object, causing recomposition when the data changes.
-    // The initial value "NOT SIGNED IN" is a sentinel to manage the initial loading state.
+    // Compose State, causing recomposition when the data changes.
     val savedUID by readLocalData(
         context,
         UIDLOCALPATH
     ).collectAsState(initial = "NOT SIGNED IN")
 
-    // --- Data Loading ---
-    // By explicitly providing the type parameter <LocalRowItem>, we tell LoadAndCache exactly
-    // what to deserialize. This avoids the type erasure crash.
-    LoadAndCache<LocalRowItem>(path = STORAGEITEMPATH) { data ->
+    // Load and cache users lists.
+    LoadAndCache<StashList>(path = STORAGEITEMPATH) { data ->
         Log.d(
             TAG,
             "Successfully read ${data.size} items from $STORAGEITEMPATH. Updating in-memory cache."
         )
-        // Re-assign the global variable to update the in-memory cache.
-        storageItems = data.toMutableList()
+        stashLists.removeAll { true }
+        stashLists.addAll(data.toMutableList())
     }
 
-    // A separate, explicit call is needed for each different type of data to be loaded.
-    LoadAndCache<TabItem>(path = TABITEMSPATH) { data ->
-        Log.d(
-            TAG,
-            "Successfully read ${data.size} tabs from $TABITEMSPATH. Updating in-memory cache."
-        )
-        tabItems = data.toMutableList()
-    }
-
-    // --- Side Effects ---
-
-    // `LaunchedEffect` is crucial for performing actions like navigation in response to state changes.
-    // This effect will re-launch whenever `savedUID` changes.
-    LaunchedEffect(savedUID, tabItems) {
-        // If savedUID is null (after the initial read), it means the user has never signed in.
+    // `LaunchedEffect` performs side effects like navigation in response to state changes.
+    LaunchedEffect(savedUID, stashLists[0]) {
         if (savedUID == null) {
             Log.d(TAG, "User is not signed in. Navigating to SignInActivity.")
             val intent = Intent(context, SignInActivity::class.java)
             context.startActivity(intent)
         }
-        if (tabItems.isEmpty()) {
-            tabItems = mutableListOf(
-                TabItem("Fridge", 0),
-                TabItem("Cabinet", 1), TabItem("Other", 2)
-            )
-        }
     }
 
-    // --- UI Rendering ---
-
-    // The main menu button is only displayed if the user is confirmed to be signed in.
-    // The check prevents the button from appearing during the initial loading state.
+    // The main menu button is displayed only if the user is signed in.
     if (savedUID != null && savedUID != "NOT SIGNED IN") {
         MenuButton(
-            callback = { context.startActivity(Intent(context, StorageActivity::class.java)) },
+            callback = { context.startActivity(Intent(context, StashActivity::class.java)) },
             text = "Open"
         )
     }
@@ -178,8 +146,7 @@ fun ReadSavedValues() {
 
 // --- Reusable UI Components ---
 /**
- * A preview composable for visualizing the MainActivity UI in Android Studio's design pane.
- * This helps in rapidly iterating on the UI without needing to run the full app on a device.
+ * A preview composable for visualizing the `MainActivity` UI in Android Studio's design pane.
  */
 @Preview(showSystemUi = true)
 @Composable
@@ -210,8 +177,9 @@ fun PagePreview() {
 
 /**
  * A simple, reusable composable for displaying a large, centered title.
+ *
  * @param string The text to be displayed.
- * @param modifier The modifier to be applied to the Text composable.
+ * @param modifier The modifier to be applied to the `Text` composable.
  */
 @Composable
 fun Title(string: String, modifier: Modifier = Modifier) {
@@ -226,7 +194,8 @@ fun Title(string: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * A standardized, reusable button composable for primary navigation actions.
+ * A standardized, reusable button for primary navigation actions.
+ *
  * @param callback The lambda function to be invoked when the button is clicked.
  * @param text The string to be displayed on the button.
  */
@@ -240,7 +209,7 @@ fun MenuButton(callback: () -> Unit, text: String) {
         Button(
             modifier = Modifier
                 .size(125.dp, 45.dp),
-            onClick = callback // The onClick action is passed in from the calling site.
+            onClick = callback
         ) {
             Text(text = text, fontSize = 15.sp)
         }

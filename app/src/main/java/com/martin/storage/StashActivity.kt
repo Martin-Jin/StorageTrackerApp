@@ -84,17 +84,13 @@ import coil.compose.rememberAsyncImagePainter
 import com.martin.storage.data.DisplayTabItem
 import com.martin.storage.data.DisplayTabItem.Companion.tabToEdit
 import com.martin.storage.data.LAST_OPENED_KEY
-import com.martin.storage.data.LocalRowItem
 import com.martin.storage.data.RowItem
 import com.martin.storage.data.RowItem.Companion.itemToEdit
 import com.martin.storage.data.STORAGEITEMPATH
-import com.martin.storage.data.TABITEMSPATH
 import com.martin.storage.data.TAG
-import com.martin.storage.data.TabItem
 import com.martin.storage.data.readLocalData
 import com.martin.storage.data.saveImageFromUri
-import com.martin.storage.data.storageItems
-import com.martin.storage.data.tabItems
+import com.martin.storage.data.stashLists
 import com.martin.storage.data.updateStoredValue
 import com.martin.storage.data.writeLocalData
 import com.martin.storage.ui.theme.AppTheme
@@ -114,8 +110,10 @@ const val TOPPADDING = 10
 private val nameFilters = mutableStateListOf<String>()
 
 // --- item data ---
+// Displays items based on what page the user is on.
+var currentPageIndex = 0
 private var currentTabIndex = mutableIntStateOf(0)
-private val allItems = mutableStateListOf<RowItem>()
+private val pageItems = mutableStateListOf<RowItem>()
 private val tabs = mutableStateListOf<DisplayTabItem>()
 
 /**
@@ -124,20 +122,22 @@ private val tabs = mutableStateListOf<DisplayTabItem>()
  * areas (e.g., "Fridge", "Cabinet"), a list of items within each tab, and functionality for
  * adding, editing, and deleting items. It also handles lifecycle events to persist data.
  */
-class StorageActivity : ComponentActivity() {
+class StashActivity : ComponentActivity() {
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        pageItems.removeAll { true }
+        tabs.removeAll { true }
         super.onCreate(savedInstanceState)
         // --- State Initialization ---
         // `mutableStateListOf` creates an observable list. Any composable that reads from this list
         // will automatically recompose when its contents change (items are added, removed, or updated).
-        // The global `storageItems` list (from DataManagement.kt), loaded in MainActivity, is converted
+        // The global `storageItems` list (from StashData.kt), loaded in MainActivity, is converted
         // to UI-specific `RowItem` objects. The same for other variables to save
-        allItems.addAll(storageItems.map { RowItem(it) })
-        tabs.addAll(tabItems.map { DisplayTabItem(it) })
+        pageItems.addAll(stashLists[currentPageIndex].items.map { RowItem(it) })
+        tabs.addAll(stashLists[currentPageIndex].tabs.map { DisplayTabItem(it) })
 
-        Log.d(TAG, "onCreate: Displaying ${allItems.size} items for storage.")
+        Log.d(TAG, "onCreate: Displaying ${pageItems.size} items for storage.")
         Log.d(TAG, "onCreate: Displaying ${tabs.size} items for tabs.")
 
         // This lifecycle scope automatically handles starting and stopping the coroutine
@@ -145,17 +145,17 @@ class StorageActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.CREATED) {
                 // Read the timestamp of the last time the app was opened.
-                val last = readLocalData(this@StorageActivity, LAST_OPENED_KEY).firstOrNull()
+                val last = readLocalData(this@StashActivity, LAST_OPENED_KEY).firstOrNull()
                 val now = System.currentTimeMillis().toString()
                 if (last != null) {
                     // If a last-opened time exists, update the decrement for each item.
-                    for (item in allItems) {
+                    for (item in pageItems) {
                         item.updateDecrement(last = last, now = now)
                     }
                 } else {
                     // If it's the first time, just record the current time.
                     writeLocalData(
-                        this@StorageActivity,
+                        this@StashActivity,
                         LAST_OPENED_KEY,
                         System.currentTimeMillis().toString()
                     )
@@ -174,14 +174,14 @@ class StorageActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
                     Column(modifier = Modifier.padding(innerPadding)) {
-                        TitleElements(allItems.size)
+                        TitleElements(pageItems.size)
                         Box {
                             // `Tabs` is the main composable for the screen's primary content.
-                            Tabs(allItems = allItems, tabs = tabs)
+                            Tabs(allItems = pageItems, tabs = tabs)
                             // This button provides a way for the user to add a new item.
                             NewRowItemBtn(
                                 modifier = Modifier.align(Alignment.BottomEnd),
-                                allItems = allItems
+                                allItems = pageItems
                             )
                         }
                     }
@@ -196,25 +196,30 @@ class StorageActivity : ComponentActivity() {
      */
     override fun onPause() {
         super.onPause()
+        stashLists[currentPageIndex].items.removeAll { true }
+        stashLists[currentPageIndex].tabs.removeAll { true }
         // Converting to the appropriate types
-        val localRowItems = mutableListOf<LocalRowItem>()
-        for (item in allItems) {
-            localRowItems.add(item.toLocalRowItem())
+        for (item in pageItems) {
+            stashLists[currentPageIndex].items.add(item.toLocalRowItem())
         }
-
-        val tabsToSave = mutableListOf<TabItem>()
         for (tab in tabs) {
-            tabsToSave.add(tab.toTabItem())
+            stashLists[currentPageIndex].tabs.add(tab.toTabItem())
         }
-
         // Saving values
-        updateStoredValue(this, lifecycleScope, localRowItems, STORAGEITEMPATH)
-        updateStoredValue(this, lifecycleScope, tabsToSave, TABITEMSPATH)
+        updateStoredValue(this, lifecycleScope, stashLists, STORAGEITEMPATH)
     }
 
 }
 
 // --- Utility functions ---
+
+/**
+ * Filters a list of `RowItem`s based on a list of name filters.
+ *
+ * @param nameFilter A list of strings to filter by.
+ * @param itemsToFilter The list of `RowItem`s to filter.
+ * @return A new list of `RowItem`s that match the filter criteria.
+ */
 fun rowItemFilter(
     nameFilter: MutableList<String>,
     itemsToFilter: List<RowItem>
@@ -236,6 +241,13 @@ fun rowItemFilter(
 }
 
 // --- Main UI Composable ---
+
+/**
+ * A button that creates a new `RowItem` and adds it to the list of all items.
+ *
+ * @param allItems The list of all `RowItem`s.
+ * @param modifier The modifier to be applied to the button.
+ */
 @Composable
 fun NewRowItemBtn(allItems: SnapshotStateList<RowItem>, modifier: Modifier) {
     Button(
@@ -245,7 +257,8 @@ fun NewRowItemBtn(allItems: SnapshotStateList<RowItem>, modifier: Modifier) {
             .size(width = 90.dp, height = 90.dp)
             .padding(20.dp),
         onClick = {
-            val newRowItem = RowItem(initialName = "New item", initialPgIndex = currentTabIndex.intValue)
+            val newRowItem =
+                RowItem(initialName = "New item", initialPgIndex = currentTabIndex.intValue)
             allItems.add(newRowItem)
             itemToEdit.value = newRowItem
         }) {
@@ -256,6 +269,12 @@ fun NewRowItemBtn(allItems: SnapshotStateList<RowItem>, modifier: Modifier) {
     }
 }
 
+/**
+ * A popup dialog that allows the user to enter a search query.
+ *
+ * @param onDismiss A callback to dismiss the dialog.
+ * @param onSearch A callback to be executed when the user searches.
+ */
 @Composable
 fun SearchBarPopup(onDismiss: () -> Unit, onSearch: (String) -> Unit) {
     var searchQuery by remember { mutableStateOf("") }
@@ -296,6 +315,11 @@ fun SearchBarPopup(onDismiss: () -> Unit, onSearch: (String) -> Unit) {
     )
 }
 
+/**
+ * A composable that displays the title of the screen, the total number of items, and a search icon.
+ *
+ * @param totalItems The total number of items.
+ */
 @Composable
 fun TitleElements(totalItems: Int) {
     var showSearchBar by remember { mutableStateOf(false) }
@@ -348,6 +372,7 @@ fun TitleElements(totalItems: Int) {
  *
  * @param modifier A `Modifier` passed from the parent.
  * @param allItems The observable list of all storage items, which will be filtered for each tab.
+ * @param tabs The observable list of all tabs.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -463,6 +488,9 @@ fun Tabs(
     }
 }
 
+/**
+ * A composable that displays the current search filters as dismissible pills.
+ */
 @Composable
 fun DisplayFilters() {
     Row(
@@ -502,6 +530,13 @@ fun DisplayFilters() {
     }
 }
 
+/**
+ * A dialog that allows the user to edit the name of a tab.
+ *
+ * @param tabToEdit The `DisplayTabItem` to be edited. If `null`, the dialog is not shown.
+ * @param onDismiss A callback to dismiss the dialog.
+ * @param onSave A callback to save the changes.
+ */
 @Composable
 fun EditTabDialogue(tabToEdit: DisplayTabItem?, onDismiss: () -> Unit, onSave: () -> Unit) {
 
@@ -750,7 +785,6 @@ fun EditItemDialog(
     )
 
     var expanded by remember { mutableStateOf(false) }
-    val pages = tabItems.map { it.index }
 
     AlertDialog(
         modifier = Modifier.padding(horizontal = 13.dp),
@@ -812,11 +846,11 @@ fun EditItemDialog(
                             modifier = Modifier
                                 .width(65.dp)
                                 .height(30.dp)
-                        ) { Text(pgIndex.toString()) }
+                        ) { Text(tabs[pgIndex].name) }
                         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            pages.forEach { page ->
-                                DropdownMenuItem(text = { Text(page.toString()) }, onClick = {
-                                    pgIndex = pages.indexOf(page)
+                            tabs.forEach { tab ->
+                                DropdownMenuItem(text = { Text(tab.name) }, onClick = {
+                                    pgIndex = tab.index
                                     expanded = false
                                 })
                             }

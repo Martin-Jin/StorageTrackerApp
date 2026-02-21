@@ -27,7 +27,7 @@ import com.martin.storage.EDGEPADDING
 import com.martin.storage.MainActivity
 import com.martin.storage.R
 import com.martin.storage.SettingActivity
-import com.martin.storage.StorageActivity
+import com.martin.storage.StashActivity
 import com.martin.storage.TOPPADDING
 
 @Composable
@@ -36,7 +36,7 @@ fun BottomNavigation(modifier: Modifier = Modifier, activeTab: Int) {
     val context = LocalContext.current
     val bottomTabs = listOf(
         { context.startActivity(Intent(context, MainActivity::class.java)) },
-        { context.startActivity(Intent(context, StorageActivity::class.java)) },
+        { context.startActivity(Intent(context, StashActivity::class.java)) },
         { context.startActivity(Intent(context, SettingActivity::class.java)) }
     )
     val tabIcons = listOf(R.drawable.homeicon, R.drawable.storagelist, R.drawable.options)
