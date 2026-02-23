@@ -7,6 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.martin.storage.R
 import kotlinx.serialization.Serializable
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 // --- Data Models ---
 
@@ -158,13 +161,12 @@ class RowItem(
         )
     }
 
-    /**
-     * Calculates and applies an automatic decrement to the item's count based on the
-     * time that has passed since the app was last opened.
-     *
-     * @param last The timestamp (as a String) of the last time the app was opened.
-     * @param now The current timestamp (as a String).
-     */
+    /* Calculates and applies an automatic decrement to the item's count based on the
+    * number of calendar days that have passed since the app was last opened.
+    *
+    * @param kotlinx.coroutines.flow.last The timestamp (as a String) of the last time the app was opened.
+    * @param now The current timestamp (as a String).
+    */
     fun updateDecrement(last: String, now: String) {
         val lastMillis = last.toLongOrNull()
         val nowMillis = now.toLongOrNull()
@@ -174,9 +176,13 @@ class RowItem(
             return
         }
 
-        val diffInMillis = nowMillis - lastMillis
-        // Calculate the number of full days that have elapsed.
-        val daysPassed = diffInMillis / (1000 * 60 * 60 * 24)
+        // Convert millisecond timestamps to LocalDate objects in the system's default timezone.
+        val lastDate = Instant.ofEpochMilli(lastMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+        val nowDate =
+            Instant.ofEpochMilli(nowMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+
+        // Calculate the number of calendar days between the two dates.
+        val daysPassed = ChronoUnit.DAYS.between(lastDate, nowDate)
 
         Log.d("RowItem", "Days passed since last open for item '$name': $daysPassed")
 

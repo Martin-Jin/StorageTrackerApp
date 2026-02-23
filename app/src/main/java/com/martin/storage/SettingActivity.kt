@@ -1,5 +1,6 @@
 package com.martin.storage
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -25,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -110,6 +112,8 @@ class SettingActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AppTheme {
+                val context = LocalContext.current
+
                 // Scaffold provides a standard layout structure for Material Design apps.
                 Scaffold(
                     bottomBar = {
@@ -137,9 +141,18 @@ class SettingActivity : ComponentActivity() {
                                             SettingButton(
                                                 text = list.pgName,
                                                 icon = R.drawable.label,
-                                                onClick = { }
+                                                onClick = {
+                                                    currentStashListIndex.intValue = stashLists.indexOf(list)
+                                                    context.startActivity(
+                                                        Intent(
+                                                            context,
+                                                            StashActivity::class.java
+                                                        )
+                                                    )
+                                                }
                                             )
                                         }
+
                                     is DividerItem -> HorizontalDivider()
                                     is SubtitleItem -> SettingSubTitle(item.text)
                                 }
@@ -250,6 +263,7 @@ fun PreviewSettings() {
                                 icon = item.icon,
                                 onClick = item.onClick
                             )
+
                             is ListItem ->
                                 for (list in stashLists) {
                                     SettingButton(
@@ -258,7 +272,8 @@ fun PreviewSettings() {
                                         onClick = { }
                                     )
                                 }
-                            is DividerItem -> HorizontalDivider()
+
+                            is DividerItem -> HorizontalDivider(modifier = Modifier.padding(vertical = 5.dp))
                             is SubtitleItem -> SettingSubTitle(item.text)
                         }
                     }

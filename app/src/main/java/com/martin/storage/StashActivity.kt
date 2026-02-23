@@ -3,7 +3,6 @@ package com.martin.storage
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -11,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -42,7 +42,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -52,6 +51,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -78,8 +79,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
 import coil.compose.rememberAsyncImagePainter
 import com.martin.storage.data.DisplayTabItem
 import com.martin.storage.data.DisplayTabItem.Companion.tabToEdit
@@ -87,7 +88,7 @@ import com.martin.storage.data.LAST_OPENED_KEY
 import com.martin.storage.data.RowItem
 import com.martin.storage.data.RowItem.Companion.itemToEdit
 import com.martin.storage.data.STORAGEITEMPATH
-import com.martin.storage.data.TAG
+import com.martin.storage.data.StashList
 import com.martin.storage.data.readLocalData
 import com.martin.storage.data.saveImageFromUri
 import com.martin.storage.data.stashLists
@@ -95,6 +96,8 @@ import com.martin.storage.data.updateStoredValue
 import com.martin.storage.data.writeLocalData
 import com.martin.storage.ui.theme.AppTheme
 import com.martin.storage.ui.theme.BottomNavigation
+import com.martin.storage.ui.theme.BottomPopUp
+import com.martin.storage.ui.theme.DropDownButton
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.io.File
@@ -102,19 +105,21 @@ import java.io.File
 // --- Constants ---
 private const val TAG = "StorageActivity"
 const val ITEMFONTSIZE = 16
-const val ROWBORDERRADIUS = 20
+const val ROWBORDERRADIUS = 53
+const val ROWSPACING = 8
 const val EDGEPADDING = 20
 const val TOPPADDING = 10
+const val ICONSIZE = 26
 
 // --- Filters by tags or searches ---
 private val nameFilters = mutableStateListOf<String>()
 
 // --- item data ---
 // Displays items based on what page the user is on.
-var currentPageIndex = 0
+var currentStashListIndex = mutableIntStateOf(0)
 private var currentTabIndex = mutableIntStateOf(0)
 private val pageItems = mutableStateListOf<RowItem>()
-private val tabs = mutableStateListOf<DisplayTabItem>()
+private val displayTabs = mutableStateListOf<DisplayTabItem>()
 
 /**
  * The primary activity for displaying and managing a user's inventory across different storage locations.
@@ -124,28 +129,19 @@ private val tabs = mutableStateListOf<DisplayTabItem>()
  */
 class StashActivity : ComponentActivity() {
 
-    @OptIn(ExperimentalMaterial3Api::class)
+    @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-        pageItems.removeAll { true }
-        tabs.removeAll { true }
         super.onCreate(savedInstanceState)
-        // --- State Initialization ---
-        // `mutableStateListOf` creates an observable list. Any composable that reads from this list
-        // will automatically recompose when its contents change (items are added, removed, or updated).
-        // The global `storageItems` list (from StashData.kt), loaded in MainActivity, is converted
-        // to UI-specific `RowItem` objects. The same for other variables to save
-        pageItems.addAll(stashLists[currentPageIndex].items.map { RowItem(it) })
-        tabs.addAll(stashLists[currentPageIndex].tabs.map { DisplayTabItem(it) })
+        // Enables edge-to-edge display for a more immersive UI.
+        enableEdgeToEdge()
+        setContent {
+            val context = LocalContext.current
+            val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
-        Log.d(TAG, "onCreate: Displaying ${pageItems.size} items for storage.")
-        Log.d(TAG, "onCreate: Displaying ${tabs.size} items for tabs.")
-
-        // This lifecycle scope automatically handles starting and stopping the coroutine
-        // in sync with the activity's lifecycle, preventing resource leaks.
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.CREATED) {
+            // This effect runs when the activity is created and handles data loading and lifecycle events.
+            LaunchedEffect(Unit) {
                 // Read the timestamp of the last time the app was opened.
-                val last = readLocalData(this@StashActivity, LAST_OPENED_KEY).firstOrNull()
+                val last = readLocalData(context, LAST_OPENED_KEY).firstOrNull()
                 val now = System.currentTimeMillis().toString()
                 if (last != null) {
                     // If a last-opened time exists, update the decrement for each item.
@@ -155,16 +151,40 @@ class StashActivity : ComponentActivity() {
                 } else {
                     // If it's the first time, just record the current time.
                     writeLocalData(
-                        this@StashActivity,
+                        context,
                         LAST_OPENED_KEY,
                         System.currentTimeMillis().toString()
                     )
                 }
             }
-        }
-        // Enables edge-to-edge display for a more immersive UI.
-        enableEdgeToEdge()
-        setContent {
+
+            // This effect reloads the page's items and tabs whenever the currentPageIndex changes.
+            LaunchedEffect(currentStashListIndex.intValue) {
+                pageItems.clear()
+                displayTabs.clear()
+                pageItems.addAll(stashLists[currentStashListIndex.intValue].items.map { RowItem(it) })
+                displayTabs.addAll(stashLists[currentStashListIndex.intValue].tabs.map { DisplayTabItem(it) })
+            }
+
+            // This effect saves the data when the activity is paused.
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_PAUSE) {
+                        stashLists[currentStashListIndex.intValue].apply {
+                            items.clear()
+                            tabs.clear()
+                            items.addAll(pageItems.map { it.toLocalRowItem() })
+                            tabs.addAll(displayTabs.map { it.toTabItem() })
+                        }
+                        updateStoredValue(context, lifecycleScope, stashLists, STORAGEITEMPATH)
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
             AppTheme {
                 // Scaffold provides a standard layout structure for Material Design apps.
                 Scaffold(
@@ -174,14 +194,35 @@ class StashActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
                     Column(modifier = Modifier.padding(innerPadding)) {
-                        TitleElements(pageItems.size)
+                        TitleElements(
+                            totalItems = pageItems.size,
+                            currentPageIndex = currentStashListIndex.intValue,
+                            onSwitchList = { newIndex -> currentStashListIndex.intValue = newIndex },
+                            onAddList = { newName -> stashLists.add(StashList(pgName = newName)) },
+                            onSearch = { query -> nameFilters.add(query) }
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
                         Box {
                             // `Tabs` is the main composable for the screen's primary content.
-                            Tabs(allItems = pageItems, tabs = tabs)
+                            Tabs(
+                                allItems = pageItems,
+                                tabs = displayTabs,
+                                onNewTab = { displayTabs.add(DisplayTabItem("Tab", displayTabs.size)) },
+                                onDeleteTab = { tab -> displayTabs.remove(tab) },
+                                onEditTab = { tab -> tabToEdit.value = tab }
+                            )
                             // This button provides a way for the user to add a new item.
                             NewRowItemBtn(
                                 modifier = Modifier.align(Alignment.BottomEnd),
-                                allItems = pageItems
+                                onNewItem = {
+                                    val newRowItem =
+                                        RowItem(
+                                            initialName = "New item",
+                                            initialPgIndex = currentTabIndex.intValue
+                                        )
+                                    pageItems.add(newRowItem)
+                                    itemToEdit.value = newRowItem
+                                }
                             )
                         }
                     }
@@ -189,26 +230,6 @@ class StashActivity : ComponentActivity() {
             }
         }
     }
-
-    /**
-     * When the activity is paused (e.g., user navigates away), this function is called
-     * to save user data.
-     */
-    override fun onPause() {
-        super.onPause()
-        stashLists[currentPageIndex].items.removeAll { true }
-        stashLists[currentPageIndex].tabs.removeAll { true }
-        // Converting to the appropriate types
-        for (item in pageItems) {
-            stashLists[currentPageIndex].items.add(item.toLocalRowItem())
-        }
-        for (tab in tabs) {
-            stashLists[currentPageIndex].tabs.add(tab.toTabItem())
-        }
-        // Saving values
-        updateStoredValue(this, lifecycleScope, stashLists, STORAGEITEMPATH)
-    }
-
 }
 
 // --- Utility functions ---
@@ -245,28 +266,240 @@ fun rowItemFilter(
 /**
  * A button that creates a new `RowItem` and adds it to the list of all items.
  *
- * @param allItems The list of all `RowItem`s.
+ * @param onNewItem A callback to be executed when the button is clicked.
  * @param modifier The modifier to be applied to the button.
  */
 @Composable
-fun NewRowItemBtn(allItems: SnapshotStateList<RowItem>, modifier: Modifier) {
+fun NewRowItemBtn(onNewItem: () -> Unit, modifier: Modifier) {
     Button(
         shape = RoundedCornerShape(15.dp),
         contentPadding = PaddingValues(5.dp),
         modifier = modifier
             .size(width = 90.dp, height = 90.dp)
             .padding(20.dp),
-        onClick = {
-            val newRowItem =
-                RowItem(initialName = "New item", initialPgIndex = currentTabIndex.intValue)
-            allItems.add(newRowItem)
-            itemToEdit.value = newRowItem
-        }) {
+        onClick = onNewItem
+    ) {
         Icon(
             painter = painterResource(R.drawable.plus),
             contentDescription = "Add new item"
         )
     }
+}
+
+/**
+ * Manages the display of dialogs and popups related to the title elements, such as the search bar,
+ * add list dialog, and switch list popup.
+ *
+ * @param showSearchBar Controls the visibility of the search bar popup.
+ * @param onDismissSearchBar Callback to dismiss the search bar.
+ * @param onSearch Callback executed when a search is submitted.
+ * @param showAddListDialog Controls the visibility of the add list dialog.
+ * @param onDismissAddListDialog Callback to dismiss the add list dialog.
+ * @param onSaveAddList Callback to save a new list.
+ * @param showSwitchListPopup Controls the visibility of the switch list popup.
+ * @param onDismissSwitchListPopup Callback to dismiss the switch list popup.
+ * @param onSwitchList Callback executed when a list is switched.
+ */
+@Composable
+fun TitleElementsDialogs(
+    showSearchBar: Boolean,
+    onDismissSearchBar: () -> Unit,
+    onSearch: (String) -> Unit,
+    showAddListDialog: Boolean,
+    onDismissAddListDialog: () -> Unit,
+    onSaveAddList: (String) -> Unit,
+    showSwitchListPopup: Boolean,
+    onDismissSwitchListPopup: () -> Unit,
+    onSwitchList: (Int) -> Unit
+) {
+    if (showSearchBar) {
+        SearchBarPopup(
+            onDismiss = onDismissSearchBar,
+            onSearch = { query ->
+                onSearch(query)
+                onDismissSearchBar()
+            }
+        )
+    }
+
+    if (showAddListDialog) {
+        AddListDialog(
+            onDismiss = onDismissAddListDialog,
+            onSave = { newListName ->
+                onSaveAddList(newListName)
+                onDismissAddListDialog()
+            }
+        )
+    }
+
+    if (showSwitchListPopup) {
+        val switchListButtons = stashLists.mapIndexed { index, stashList ->
+            DropDownButton(text = stashList.pgName) {
+                onSwitchList(index)
+                onDismissSwitchListPopup()
+            }
+        }
+        BottomPopUp(
+            title = "Switch List",
+            expanded = true,
+            onDismissRequest = onDismissSwitchListPopup,
+            buttons = switchListButtons
+        )
+    }
+}
+
+/**
+ * A composable that displays the screen's title, total item count, and icons for search and list management.
+ * It delegates the handling of dialogs and popups to the `TitleElementsDialogs` composable.
+ *
+ * @param totalItems The total number of items in the current list.
+ * @param currentPageIndex The index of the currently displayed page.
+ * @param onSwitchList A callback to be executed when the user switches lists.
+ * @param onAddList A callback to be executed when the user adds a new list.
+ * @param onSearch A callback to be executed when the user searches for an item.
+ */
+@Composable
+fun TitleElements(
+    totalItems: Int,
+    currentPageIndex: Int,
+    onSwitchList: (Int) -> Unit,
+    onAddList: (String) -> Unit,
+    onSearch: (String) -> Unit
+) {
+    var showSearchBar by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showAddListDialog by remember { mutableStateOf(false) }
+    var showSwitchListPopup by remember { mutableStateOf(false) }
+
+    TitleElementsDialogs(
+        showSearchBar = showSearchBar,
+        onDismissSearchBar = { showSearchBar = false },
+        onSearch = onSearch,
+        showAddListDialog = showAddListDialog,
+        onDismissAddListDialog = { showAddListDialog = false },
+        onSaveAddList = onAddList,
+        showSwitchListPopup = showSwitchListPopup,
+        onDismissSwitchListPopup = { showSwitchListPopup = false },
+        onSwitchList = onSwitchList
+    )
+
+    Row(
+        modifier = Modifier
+            .padding(horizontal = EDGEPADDING.dp, vertical = TOPPADDING.dp)
+            .fillMaxWidth()
+    ) {
+        Column {
+            Text(
+                text = "${stashLists[currentPageIndex].pgName} list",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                style = TextStyle(
+                    platformStyle = PlatformTextStyle(
+                        includeFontPadding = false,
+                    ),
+                ),
+            )
+            Text(
+                text = "Total: $totalItems items", fontSize = 15.sp,
+            )
+        }
+        Spacer(modifier = Modifier.weight(1f))
+
+        // Search button
+        Icon(
+            painter = painterResource(R.drawable.search_database),
+            contentDescription = "search icon",
+            modifier = Modifier
+                .pointerInput(Unit) {
+                    detectTapGestures { showSearchBar = true }
+                }
+                .size(ICONSIZE.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+
+        // Menu for the list
+        Box {
+            Icon(
+                painter = painterResource(R.drawable.listmenu),
+                contentDescription = "Tab icon",
+                modifier = Modifier
+                    .pointerInput(Unit) {
+                        detectTapGestures { showMenu = !showMenu }
+                    }
+                    .size(ICONSIZE.dp)
+            )
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Add list") },
+                    onClick = {
+                        showAddListDialog = true
+                        showMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Switch list") },
+                    onClick = {
+                        showSwitchListPopup = true
+                        showMenu = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A popup dialog that allows the user to add a new list.
+ *
+ * @param onDismiss A callback to dismiss the dialog.
+ * @param onSave A callback to be executed when the user saves the new list.
+ */
+@Composable
+fun AddListDialog(onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var listName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        modifier = Modifier.padding(horizontal = 13.dp),
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Add new list") },
+        text = {
+            TextField(
+                value = listName,
+                onValueChange = { listName = it },
+                label = { Text("List name") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                Button(
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    onClick = {
+                        onSave(listName)
+                    }
+                ) {
+                    Text("Save")
+                }
+                Spacer(Modifier.width(15.dp))
+                Button(
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    onClick = onDismiss
+                ) {
+                    Text("Cancel")
+                }
+            }
+
+        }
+    )
 }
 
 /**
@@ -304,8 +537,6 @@ fun SearchBarPopup(onDismiss: () -> Unit, onSearch: (String) -> Unit) {
                 Button(
                     onClick = {
                         onSearch(searchQuery)
-                        nameFilters.add(searchQuery)
-                        onDismiss()
                     }
                 ) {
                     Text("Search")
@@ -313,55 +544,6 @@ fun SearchBarPopup(onDismiss: () -> Unit, onSearch: (String) -> Unit) {
             }
         }
     )
-}
-
-/**
- * A composable that displays the title of the screen, the total number of items, and a search icon.
- *
- * @param totalItems The total number of items.
- */
-@Composable
-fun TitleElements(totalItems: Int) {
-    var showSearchBar by remember { mutableStateOf(false) }
-
-    if (showSearchBar) {
-        SearchBarPopup(
-            onDismiss = { showSearchBar = false },
-            onSearch = { query ->
-                Log.d("TitleElements", "Search for: $query")
-                showSearchBar = false
-            }
-        )
-    }
-    Row(
-        modifier = Modifier
-            .padding(start = EDGEPADDING.dp, end = EDGEPADDING.dp, top = TOPPADDING.dp)
-            .fillMaxWidth()
-    ) {
-        Column {
-            Text(
-                text = "Stash",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                style = TextStyle(
-                    platformStyle = PlatformTextStyle(
-                        includeFontPadding = false,
-                    ),
-                ),
-            )
-            Text(
-                text = "Total: $totalItems items", fontSize = 15.sp,
-            )
-        }
-        Spacer(modifier = Modifier.weight(1f))
-        Icon(
-            painter = painterResource(R.drawable.search_database),
-            contentDescription = "search icon",
-            modifier = Modifier.pointerInput(Unit) {
-                detectTapGestures { showSearchBar = true }
-            }
-        )
-    }
 }
 
 
@@ -373,6 +555,9 @@ fun TitleElements(totalItems: Int) {
  * @param modifier A `Modifier` passed from the parent.
  * @param allItems The observable list of all storage items, which will be filtered for each tab.
  * @param tabs The observable list of all tabs.
+ * @param onNewTab A callback to be executed when a new tab is added.
+ * @param onDeleteTab A callback to be executed when a tab is deleted.
+ * @param onEditTab A callback to be executed when a tab is edited.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -380,10 +565,16 @@ fun Tabs(
     modifier: Modifier = Modifier,
     allItems: SnapshotStateList<RowItem>,
     tabs: SnapshotStateList<DisplayTabItem>,
+    onNewTab: () -> Unit,
+    onDeleteTab: (DisplayTabItem) -> Unit,
+    onEditTab: (DisplayTabItem) -> Unit
 ) {
     val pagerState = rememberPagerState(initialPage = 0) { tabs.size }
     val coroutineScope = rememberCoroutineScope()
-    currentTabIndex.intValue = pagerState.currentPage
+
+    LaunchedEffect(pagerState.currentPage) {
+        currentTabIndex.intValue = pagerState.currentPage
+    }
 
     // The dialog for editing an item is defined here but only shown when `itemToEdit.value` is not null.
     EditItemDialog(
@@ -406,7 +597,7 @@ fun Tabs(
             selectedTabIndex = pagerState.currentPage,
             divider = { },
             tabs = {
-                for (tab in tabs) {
+                tabs.forEach { tab ->
                     var showMenu by remember { mutableStateOf(false) }
                     Tab(
                         modifier = Modifier
@@ -430,25 +621,29 @@ fun Tabs(
                                     )
                                 }, text = tab.name, fontSize = 15.sp
                             )
-                            DropdownMenu(
+                            BottomPopUp(
+                                title = "Editing tab",
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Delete") },
-                                    onClick = {
-                                        tabs.remove(tab)
-                                        showMenu = false
-                                    }
+                                buttons = listOf(
+                                    DropDownButton(
+                                        text = "Delete",
+                                        icon = R.drawable.outline_delete_24,
+                                        onClick = {
+                                            onDeleteTab(tab)
+                                            showMenu = false
+                                        }
+                                    ),
+                                    DropDownButton(
+                                        text = "Edit",
+                                        icon = R.drawable.outline_edit_24,
+                                        onClick = {
+                                            onEditTab(tab)
+                                            showMenu = false
+                                        }
+                                    )
                                 )
-                                DropdownMenuItem(
-                                    text = { Text("Edit") },
-                                    onClick = {
-                                        tabToEdit.value = tab
-                                        showMenu = false
-                                    }
-                                )
-                            }
+                            )
                         },
                     )
                 }
@@ -459,9 +654,7 @@ fun Tabs(
                         .padding(top = 4.dp, start = 8.dp, end = 8.dp, bottom = 4.dp)
                         .clip(RoundedCornerShape(ROWBORDERRADIUS.dp)),
                     contentPadding = PaddingValues(5.dp),
-                    onClick = {
-                        tabs.add(DisplayTabItem("Tab", tabs.size))
-                    },
+                    onClick = onNewTab,
                 )
                 {
                     Text(text = "New")
@@ -566,8 +759,8 @@ fun EditTabDialogue(tabToEdit: DisplayTabItem?, onDismiss: () -> Unit, onSave: (
                         onSave()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Red,
-                        contentColor = Color.White
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 ) { Text(text = "Save") }
                 Spacer(Modifier.width(15.dp))
@@ -610,6 +803,7 @@ fun StorageScreen(
                 onDelete = { allItems.remove(item) },
                 onEdit = { itemToEdit.value = it }
             )
+            Spacer(modifier = Modifier.height(ROWSPACING.dp))
         }
     }
 }
@@ -639,105 +833,118 @@ fun RowItemUI(
     }
 
     Box {
-        Card(
-            shape = RoundedCornerShape(ROWBORDERRADIUS.dp),
+        Row(
             modifier = Modifier
-                .heightIn(0.dp, 62.5.dp)
                 .fillMaxWidth()
-                .padding(vertical = 4.dp, horizontal = EDGEPADDING.dp)
-                .pointerInput(Unit) {
-                    // Open the dropdown menu on a simple tap.
-                    detectTapGestures(onTap = { showMenu = true })
-                }
+                .padding(horizontal = EDGEPADDING.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Asynchronously load and display the item's image using Coil.
-                Image(
-                    painter = rememberAsyncImagePainter(model = imageModel),
-                    contentDescription = rowItem.name,
-                    contentScale = ContentScale.Crop,
+            Card(
+                shape = RoundedCornerShape(ROWBORDERRADIUS.dp),
+                modifier = Modifier
+                    .weight(0.6f)
+                    .heightIn(0.dp, ROWBORDERRADIUS.dp)
+                    .pointerInput(Unit) {
+                        // Open the dropdown menu on a simple tap.
+                        detectTapGestures(onTap = { showMenu = true })
+                    }
+            ) {
+                Row(
                     modifier = Modifier
-                        .width((ROWBORDERRADIUS * 3.9).dp)
-                        .fillMaxHeight()
-                        .clip(
-                            RoundedCornerShape(
-                                topStart = ROWBORDERRADIUS.dp,
-                                bottomStart = ROWBORDERRADIUS.dp
-                            )
-                        )
-                )
-
-                Row(
-                    modifier = Modifier.weight(0.7f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    // `basicMarquee` provides a scrolling animation if the item name is too long.
-                    Text(
-                        text = rowItem.name,
-                        fontSize = ITEMFONTSIZE.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        modifier = Modifier.basicMarquee()
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.padding(end = 16.dp),
+                        .weight(0.5f)
+                        .background(MaterialTheme.colorScheme.surfaceContainer),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Buttons to increment and decrement the item count.
-                    Button(
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary,
-                            contentColor = MaterialTheme.colorScheme.inverseOnSurface
-                        ),
-                        onClick = { rowItem.increaseCount() },
-                        modifier = Modifier.size(25.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) { Text(text = "+") }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        "${rowItem.count} ${rowItem.unit}",
-                        maxLines = 1,
-                        fontSize = (ITEMFONTSIZE * 0.9).sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                    // Asynchronously load and display the item's image using Coil.
+                    Image(
+                        painter = rememberAsyncImagePainter(model = imageModel),
+                        contentDescription = rowItem.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .width((ROWBORDERRADIUS * 1.25).dp)
+                            .fillMaxHeight()
+                            .clip(
+                                RoundedCornerShape(
+                                    topStart = ROWBORDERRADIUS.dp,
+                                    bottomStart = ROWBORDERRADIUS.dp
+                                )
+                            )
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Row(
+                        modifier = Modifier.weight(0.5f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        // Only show unit if given one
+                        var unitText = ": ${rowItem.count}"
+                        if (rowItem.unit != "") {
+                            unitText = ": ${rowItem.count} ${rowItem.unit}"
+                        }
 
-                    Button(
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary,
-                            contentColor = MaterialTheme.colorScheme.inverseOnSurface
-                        ),
-                        onClick = { rowItem.decreaseCount() },
-                        modifier = Modifier.size(25.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) { Text(text = "-") }
+                        // `basicMarquee` provides a scrolling animation if the item name is too long.
+                        Text(
+                            text = rowItem.name + unitText,
+                            fontSize = ITEMFONTSIZE.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            modifier = Modifier.basicMarquee()
+                        )
+                    }
                 }
             }
-        }
 
-        // The dropdown menu is anchored to the `Box` and is only expanded when `showMenu` is true.
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text("Delete") },
-                onClick = {
-                    onDelete()
-                    showMenu = false
-                }
+            // The dropdown menu is anchored to the `Box` and is only expanded when `showMenu` is true.
+            BottomPopUp(
+                title = "Editing item: ${rowItem.name}",
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+                buttons = listOf(
+                    DropDownButton(
+                        text = "Delete",
+                        icon = R.drawable.outline_delete_24,
+                        onClick = {
+                            onDelete()
+                            showMenu = false
+                        }),
+                    DropDownButton(
+                        text = "Edit",
+                        icon = R.drawable.outline_edit_24,
+                        onClick = {
+                            onEdit(rowItem)
+                            showMenu = false
+                        }
+                    )
+                )
             )
-            DropdownMenuItem(
-                text = { Text("Edit") },
-                onClick = {
-                    onEdit(rowItem)
-                    showMenu = false
-                }
-            )
+            Spacer(modifier = Modifier.width(20.dp))
+            Row(
+                modifier = Modifier.padding(end = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Buttons to increment and decrement the item count.
+                Button(
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                    ),
+                    onClick = { rowItem.increaseCount() },
+                    modifier = Modifier.size(25.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) { Text(text = "+", color = MaterialTheme.colorScheme.onSecondaryContainer) }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Button(
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                    ),
+                    onClick = { rowItem.decreaseCount() },
+                    modifier = Modifier.size(25.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) { Text(text = "-", color = MaterialTheme.colorScheme.onSecondaryContainer) }
+            }
         }
     }
 }
@@ -798,7 +1005,7 @@ fun EditItemDialog(
                     label = { Text("Name") },
                     singleLine = true
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth()) {
                     TextField(
                         modifier = Modifier.weight(0.5f),
@@ -816,7 +1023,7 @@ fun EditItemDialog(
                         singleLine = true
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextField(
                         value = decrementText,
@@ -846,15 +1053,19 @@ fun EditItemDialog(
                             modifier = Modifier
                                 .width(65.dp)
                                 .height(30.dp)
-                        ) { Text(tabs[pgIndex].name) }
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            tabs.forEach { tab ->
-                                DropdownMenuItem(text = { Text(tab.name) }, onClick = {
-                                    pgIndex = tab.index
-                                    expanded = false
-                                })
-                            }
+                        ) { Text(stashLists[currentStashListIndex.intValue].tabs[pgIndex].name) }
+                        val dropDownBtns = mutableListOf<DropDownButton>()
+                        stashLists[currentStashListIndex.intValue].tabs.forEach { tab ->
+                            dropDownBtns.add(DropDownButton(text = tab.name, onClick = {
+                                pgIndex = tab.index
+                                expanded = false
+                            }))
                         }
+                        BottomPopUp(
+                            title = "Editing: ${itemToEdit.name} tab",
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }, buttons = dropDownBtns
+                        )
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     Text("Image:")
@@ -882,7 +1093,8 @@ fun EditItemDialog(
                         itemToEdit.pgIndex = pgIndex
                         itemToEdit.img = imgText
                         itemToEdit.decrement = decrementText.toIntOrNull() ?: 1
-                        itemToEdit.decrementInterval = decrementIntervalText.toIntOrNull() ?: 1
+                        itemToEdit.decrementInterval =
+                            decrementIntervalText.toIntOrNull() ?: 1
                         onSave()
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -914,7 +1126,7 @@ fun EditItemDialog(
 @Composable
 fun StorageScreenPreview() {
     @SuppressLint("UnrememberedMutableState")
-    val allItems = mutableStateListOf(RowItem("Test"))
+    val allItems = mutableStateListOf(RowItem("wasdwasdwasd"))
 
     @SuppressLint("UnrememberedMutableState")
     val tabs = mutableStateListOf(DisplayTabItem("Tab1", 0))
@@ -927,14 +1139,26 @@ fun StorageScreenPreview() {
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
             Column(modifier = Modifier.padding(innerPadding)) {
-                TitleElements(allItems.size)
+                TitleElements(
+                    totalItems = allItems.size,
+                    currentPageIndex = 0,
+                    onSwitchList = {},
+                    onAddList = {},
+                    onSearch = {}
+                )
+                Spacer(modifier = Modifier.height(6.dp))
                 Box {
                     // `Tabs` is the main composable for the screen's primary content.
-                    Tabs(allItems = allItems, tabs = tabs)
+                    Tabs(
+                        allItems = allItems,
+                        tabs = tabs,
+                        onNewTab = {},
+                        onDeleteTab = {},
+                        onEditTab = {})
                     // This button provides a way for the user to add a new item.
                     NewRowItemBtn(
                         modifier = Modifier.align(Alignment.BottomEnd),
-                        allItems = allItems
+                        onNewItem = {}
                     )
                 }
             }

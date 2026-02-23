@@ -66,7 +66,7 @@ data class StashList(
     val tabs: MutableList<TabItem> = mutableListOf(TabItem("Tab1", 0))
 )
 
-val stashLists = mutableListOf<StashList>(
+val stashLists = mutableListOf(
     StashList(
         pgName = "Fridge"
     )
