@@ -827,7 +827,7 @@ fun RowItemUI(
     Box {
         Card(
             modifier = Modifier
-                .padding(horizontal = (EDGEPADDING + 20).dp)
+                .padding(horizontal = (EDGEPADDING + 10).dp)
                 .pointerInput(Unit) {
                     // Open the dropdown menu on a simple tap.
                     detectTapGestures(onTap = { showMenu = true })
@@ -853,7 +853,7 @@ fun RowItemUI(
                         .size(50.dp)
                         .clip(CircleShape)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Row(
                     modifier = Modifier.widthIn(max = 135.dp),
                     verticalAlignment = Alignment.CenterVertically,

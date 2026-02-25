@@ -94,6 +94,7 @@ class SettingActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val context = LocalContext.current
+            val intent = Intent(context, EmptyActivity::class.java)
 
             settingsItems = remember {
                 listOf(
@@ -127,8 +128,6 @@ class SettingActivity : ComponentActivity() {
             }
 
             AppTheme {
-                val context = LocalContext.current
-
                 // Scaffold provides a standard layout structure for Material Design apps.
                 Scaffold(
                     bottomBar = {

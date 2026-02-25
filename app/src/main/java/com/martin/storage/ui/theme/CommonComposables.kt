@@ -59,7 +59,7 @@ fun BottomNavigation(modifier: Modifier = Modifier, activeTab: Int) {
         { context.startActivity(Intent(context, StashActivity::class.java)) },
         { context.startActivity(Intent(context, SettingActivity::class.java)) }
     )
-    val tabIcons = listOf(R.drawable.homeicon, R.drawable.storagelist, R.drawable.options)
+    val tabIcons = listOf(R.drawable.homeicon, R.drawable.checklist, R.drawable.options)
 
     NavigationBar(modifier = modifier.height(75.dp)) {
         bottomTabs.forEachIndexed { index, item ->
