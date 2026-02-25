@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -79,26 +80,7 @@ data class SubtitleItem(val text: String) : SettingItem()
  */
 data class ListItem(val text: String) : SettingItem()
 
-/**
- * A predefined list of setting items to be displayed on the settings screen.
- * This list defines the structure and content of the settings page.
- */
-val settingsItems = listOf(
-    ButtonItem("Account", R.drawable.account_circle, {}),
-    ButtonItem("Security", R.drawable.privacy, {}),
-    ButtonItem("Notifications", R.drawable.notifications, {}),
-    DividerItem,
-    SubtitleItem("Customization"),
-    ButtonItem("Appearance", R.drawable.brush, {}),
-    DividerItem,
-    SubtitleItem("Utility"),
-    ButtonItem("Low stock items", R.drawable.checklist, {}),
-    DividerItem,
-    SubtitleItem("Lists"),
-    ListItem("List"),
-    DividerItem,
-    ButtonItem("About", R.drawable.copyright, {})
-)
+var settingsItems = listOf<SettingItem>()
 
 /**
  * An activity for displaying and managing user-configurable settings.
@@ -111,6 +93,39 @@ class SettingActivity : ComponentActivity() {
         // Enables edge-to-edge display for a more immersive UI.
         enableEdgeToEdge()
         setContent {
+            val context = LocalContext.current
+
+            settingsItems = remember {
+                listOf(
+                    ButtonItem("Account", R.drawable.account_circle) {
+                        context.startActivity(intent)
+                    },
+                    ButtonItem("Security", R.drawable.privacy) {
+                        context.startActivity(intent)
+                    },
+                    ButtonItem("Notifications", R.drawable.notifications) {
+                        context.startActivity(intent)
+                    },
+                    DividerItem,
+                    SubtitleItem("Customization"),
+                    ButtonItem("Appearance", R.drawable.brush) {
+                        context.startActivity(intent)
+                    },
+                    DividerItem,
+                    SubtitleItem("Utility"),
+                    ButtonItem("Low stock items", R.drawable.checklist) {
+                        context.startActivity(intent)
+                    },
+                    DividerItem,
+                    SubtitleItem("Lists"),
+                    ListItem("List"),
+                    DividerItem,
+                    ButtonItem("About", R.drawable.copyright) {
+                        context.startActivity(intent)
+                    }
+                )
+            }
+
             AppTheme {
                 val context = LocalContext.current
 
@@ -142,7 +157,8 @@ class SettingActivity : ComponentActivity() {
                                                 text = list.pgName,
                                                 icon = R.drawable.label,
                                                 onClick = {
-                                                    currentListIndex.intValue = stashLists.indexOf(list)
+                                                    currentListIndex.intValue =
+                                                        stashLists.indexOf(list)
                                                     context.startActivity(
                                                         Intent(
                                                             context,
@@ -195,7 +211,7 @@ fun SettingButton(modifier: Modifier = Modifier, text: String, icon: Int, onClic
                 modifier = Modifier.fillMaxWidth(),
                 text = text,
                 textAlign = TextAlign.Start,
-                fontSize = ITEMFONTSIZE.sp,
+                fontSize = TEXTFONTSIZE.sp,
                 color = MaterialTheme.colorScheme.onSurface
             )
         }
@@ -218,7 +234,7 @@ fun SettingSubTitle(text: String) {
     ) {
         Text(
             text = text,
-            fontSize = (ITEMFONTSIZE - 1).sp,
+            fontSize = (TEXTFONTSIZE - 1).sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
             style = TextStyle(

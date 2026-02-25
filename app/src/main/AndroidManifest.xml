@@ -16,6 +16,9 @@
             android:name="com.martin.storage.StashActivity"
             android:exported="false" />
         <activity
+            android:name="com.martin.storage.EmptyActivity"
+            android:exported="false" />
+        <activity
             android:name="com.martin.storage.SignInActivity"
             android:exported="false" />
         <activity

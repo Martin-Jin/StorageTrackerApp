@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,17 +28,20 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -75,6 +77,7 @@ import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -103,9 +106,8 @@ import java.io.File
 
 // --- Constants ---
 private const val TAG = "StorageActivity"
-const val ITEMFONTSIZE = 16
+const val TEXTFONTSIZE = 16
 const val ROWBORDERRADIUS = 53
-const val ROWSPACING = 8
 const val EDGEPADDING = 20
 const val TOPPADDING = 10
 const val ICONSIZE = 26
@@ -725,7 +727,7 @@ fun DisplayFilters() {
 fun EditTabDialogue(tabToEdit: DisplayTabItem?, onDismiss: () -> Unit, onSave: () -> Unit) {
 
     if (tabToEdit == null) return
-    var tabName by remember (tabToEdit.identifier) { mutableStateOf(tabToEdit.name) }
+    var tabName by remember(tabToEdit.identifier) { mutableStateOf(tabToEdit.name) }
 
     AlertDialog(
         modifier = Modifier.padding(horizontal = 13.dp),
@@ -794,7 +796,6 @@ fun StorageScreen(
                 onDelete = { allItems.remove(item) },
                 onEdit = { itemToEdit.value = it }
             )
-            Spacer(modifier = Modifier.height(ROWSPACING.dp))
         }
     }
 }
@@ -824,119 +825,120 @@ fun RowItemUI(
     }
 
     Box {
-        Row(
+        Card(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = EDGEPADDING.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+                .padding(horizontal = (EDGEPADDING + 20).dp)
+                .pointerInput(Unit) {
+                    // Open the dropdown menu on a simple tap.
+                    detectTapGestures(onTap = { showMenu = true })
+                },
+            colors = CardDefaults.cardColors(
+                containerColor = Color.Transparent
+            )
+
         ) {
-            Card(
-                shape = RoundedCornerShape(ROWBORDERRADIUS.dp),
+            Row(
                 modifier = Modifier
-                    .weight(0.6f)
-                    .heightIn(0.dp, ROWBORDERRADIUS.dp)
-                    .pointerInput(Unit) {
-                        // Open the dropdown menu on a simple tap.
-                        detectTapGestures(onTap = { showMenu = true })
-                    }
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
-                Row(
+                // Asynchronously load and display the item's image using Coil.
+                Image(
+                    painter = rememberAsyncImagePainter(model = imageModel),
+                    contentDescription = rowItemUI.name,
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .weight(0.5f)
-                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                        .size(50.dp)
+                        .clip(CircleShape)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Row(
+                    modifier = Modifier.widthIn(max = 135.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // `basicMarquee` provides a scrolling animation if the item name is too long.
+                    Text(
+                        modifier = Modifier
+                            .weight(1f)
+                            .basicMarquee(),
+                        textAlign = TextAlign.Left,
+                        text = rowItemUI.name,
+                        fontSize = (TEXTFONTSIZE + 1).sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                // Row for plus and minus buttons
+                Row(
+                    modifier = Modifier.padding(end = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Asynchronously load and display the item's image using Coil.
-                    Image(
-                        painter = rememberAsyncImagePainter(model = imageModel),
-                        contentDescription = rowItemUI.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .width((ROWBORDERRADIUS * 1.25).dp)
-                            .fillMaxHeight()
-                            .clip(
-                                RoundedCornerShape(
-                                    topStart = ROWBORDERRADIUS.dp,
-                                    bottomStart = ROWBORDERRADIUS.dp
-                                )
-                            )
-                    )
-                    Row(
-                        modifier = Modifier.weight(0.5f),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        // Only show unit if given one
-                        var unitText = ": ${rowItemUI.count}"
-                        if (rowItemUI.unit != "") {
-                            unitText = ": ${rowItemUI.count} ${rowItemUI.unit}"
-                        }
+                    // Buttons to increment and decrement the item count.
+                    Button(
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                        ),
+                        onClick = { rowItemUI.increaseCount() },
+                        modifier = Modifier.size(25.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) { Text(text = "+", color = MaterialTheme.colorScheme.onSecondaryContainer) }
 
-                        // `basicMarquee` provides a scrolling animation if the item name is too long.
-                        Text(
-                            text = rowItemUI.name + unitText,
-                            fontSize = ITEMFONTSIZE.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            modifier = Modifier.basicMarquee()
-                        )
+                    Spacer(modifier = Modifier.width(7.dp))
+
+                    // Only show unit if given one
+                    var unitText = "${rowItemUI.count}"
+                    if (rowItemUI.unit != "") {
+                        unitText = "${rowItemUI.count} ${rowItemUI.unit}"
                     }
+
+                    Text(
+                        textAlign = TextAlign.Left,
+                        text = unitText,
+                        fontSize = TEXTFONTSIZE.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                    )
+                    Spacer(modifier = Modifier.width(7.dp))
+                    Button(
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                        ),
+                        onClick = { rowItemUI.decreaseCount() },
+                        modifier = Modifier.size(25.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) { Text(text = "-", color = MaterialTheme.colorScheme.onSecondaryContainer) }
                 }
             }
+        }
 
-            // The dropdown menu is anchored to the `Box` and is only expanded when `showMenu` is true.
-            BottomPopUp(
-                title = "Editing item: ${rowItemUI.name}",
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false },
-                buttons = listOf(
-                    DropDownButton(
-                        text = "Delete",
-                        icon = R.drawable.outline_delete_24,
-                        onClick = {
-                            onDelete()
-                            showMenu = false
-                        }),
-                    DropDownButton(
-                        text = "Edit",
-                        icon = R.drawable.outline_edit_24,
-                        onClick = {
-                            onEdit(rowItemUI)
-                            showMenu = false
-                        }
-                    )
+        // The dropdown menu is anchored to the `Box` and is only expanded when `showMenu` is true.
+        BottomPopUp(
+            title = "Editing item: ${rowItemUI.name}",
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false },
+            buttons = listOf(
+                DropDownButton(
+                    text = "Delete",
+                    icon = R.drawable.outline_delete_24,
+                    onClick = {
+                        onDelete()
+                        showMenu = false
+                    }),
+                DropDownButton(
+                    text = "Edit",
+                    icon = R.drawable.outline_edit_24,
+                    onClick = {
+                        onEdit(rowItemUI)
+                        showMenu = false
+                    }
                 )
             )
-            Spacer(modifier = Modifier.width(20.dp))
-            Row(
-                modifier = Modifier.padding(end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Buttons to increment and decrement the item count.
-                Button(
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.inverseOnSurface
-                    ),
-                    onClick = { rowItemUI.increaseCount() },
-                    modifier = Modifier.size(25.dp),
-                    contentPadding = PaddingValues(0.dp)
-                ) { Text(text = "+", color = MaterialTheme.colorScheme.onSecondaryContainer) }
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Button(
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.inverseOnSurface
-                    ),
-                    onClick = { rowItemUI.decreaseCount() },
-                    modifier = Modifier.size(25.dp),
-                    contentPadding = PaddingValues(0.dp)
-                ) { Text(text = "-", color = MaterialTheme.colorScheme.onSecondaryContainer) }
-            }
-        }
+        )
     }
 }
 
