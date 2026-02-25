@@ -66,7 +66,7 @@ class RowItemUI(
     var decrement: Int = 1,
     var decrementInterval: Int = 1,
     var lastOpened: String = "" // The last date a decrement was recorded
-): UserInterface(name = initialName, identifier = "") {
+): UserInterface(initialName = initialName, identifier = "") {
     /**
      * A secondary constructor that creates a `RowItem` for the UI layer from a `LocalRowItem` from the data layer.
      * This simplifies the process of converting persisted data into a stateful UI object.

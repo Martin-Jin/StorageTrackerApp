@@ -1117,7 +1117,7 @@ fun EditItemDialog(
 @Composable
 fun StorageScreenPreview() {
     @SuppressLint("UnrememberedMutableState")
-    val allItems = mutableStateListOf(RowItemUI("wasdwasdwasd"))
+    val allItems = mutableStateListOf(RowItemUI("wasd"))
 
     @SuppressLint("UnrememberedMutableState")
     val tabs = mutableStateListOf(DisplayTabItem("Tab1", 0))
