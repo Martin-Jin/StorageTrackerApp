@@ -142,7 +142,7 @@ class SettingActivity : ComponentActivity() {
                                                 text = list.pgName,
                                                 icon = R.drawable.label,
                                                 onClick = {
-                                                    currentStashListIndex.intValue = stashLists.indexOf(list)
+                                                    currentListIndex.intValue = stashLists.indexOf(list)
                                                     context.startActivity(
                                                         Intent(
                                                             context,

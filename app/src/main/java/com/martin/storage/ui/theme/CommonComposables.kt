@@ -3,6 +3,7 @@ package com.martin.storage.ui.theme
 import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +49,8 @@ import com.martin.storage.StashActivity
 import com.martin.storage.TOPPADDING
 import kotlinx.coroutines.launch
 
-const val BOTTOMTABHEIGHT = 52
+const val TOPTABHEIGHT = 52
+const val DIALOGPADDING = 13
 
 @Composable
 fun BottomNavigation(modifier: Modifier = Modifier, activeTab: Int) {
@@ -58,7 +63,7 @@ fun BottomNavigation(modifier: Modifier = Modifier, activeTab: Int) {
     )
     val tabIcons = listOf(R.drawable.homeicon, R.drawable.storagelist, R.drawable.options)
 
-    NavigationBar(modifier = Modifier.height(70.dp)) {
+    NavigationBar(modifier = modifier.height(75.dp)) {
         bottomTabs.forEachIndexed { index, item ->
             NavigationBarItem(
                 icon = {
@@ -82,7 +87,7 @@ fun TopTitle(modifier: Modifier = Modifier, text: String) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(BOTTOMTABHEIGHT.dp)
+            .height(TOPTABHEIGHT.dp)
             .padding(start = EDGEPADDING.dp, top = TOPPADDING.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -116,7 +121,16 @@ fun BottomPopUp(
     if (expanded) {
         ModalBottomSheet(
             onDismissRequest = onDismissRequest,
-            sheetState = sheetState
+            sheetState = sheetState,
+            dragHandle = {
+                // Draws the default drag handle without the ripple effect.
+                BottomSheetDefaults.DragHandle(
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {}
+                )
+            }
         ) {
             Column(Modifier.padding(bottom = 32.dp)) {
                 Text(
@@ -133,10 +147,7 @@ fun BottomPopUp(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
+                            .clickable {
                                 scope.launch {
                                     button.onClick()
                                     sheetState.hide()
@@ -168,6 +179,41 @@ fun BottomPopUp(
     }
 }
 
+@Composable
+fun SimpleAlertDialog(title: String, message: String, onDismissRequest: () -> Unit) {
+    // The AlertDialog composable
+    AlertDialog(
+        modifier = Modifier.padding(DIALOGPADDING.dp),
+        onDismissRequest = onDismissRequest,
+        title = {
+            Text(title)
+        },
+        text = {
+            Text(message)
+        },
+        confirmButton = {
+        }
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun Preview(title: String = "wasd", message: String = "wasd", onDismissRequest: () -> Unit = {}) {
+    // The AlertDialog composable
+    AlertDialog(
+        modifier = Modifier.padding(DIALOGPADDING.dp),
+        onDismissRequest = onDismissRequest,
+        title = {
+            Text(title)
+        },
+        text = {
+            Text(message)
+        },
+        confirmButton = {
+        }
+    )
+}
+
 @Preview(showBackground = true)
 @Composable
 fun BottomPopUpPreview() {
@@ -181,7 +227,7 @@ fun BottomPopUpPreview() {
         BottomPopUp(
             title = "Options",
             expanded = true,
-            onDismissRequest = { showSheet = false },
+            onDismissRequest = { showSheet = !showSheet },
             buttons = buttons
         )
     }

@@ -1,4 +1,4 @@
-package com.martin.storage.data
+package com.martin.storage.customUI
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -27,7 +27,7 @@ data class TabItem(val name: String = "New tab", val index: Int)
 class DisplayTabItem(
     initialName: String = "New tab",
     initialIndex: Int
-) {
+): UserInterface(initialName, "") {
     companion object {
         /**
          * A global, observable state that holds the `DisplayTabItem` currently being edited.
@@ -35,6 +35,7 @@ class DisplayTabItem(
          */
         var tabToEdit = mutableStateOf<DisplayTabItem?>(null)
     }
+
     /**
      * A secondary constructor that creates a `DisplayTabItem` for the UI layer from a `TabItem` from the data layer.
      * This simplifies the process of converting persisted data into a stateful UI object.
@@ -44,7 +45,7 @@ class DisplayTabItem(
         initialIndex = tabItem.index
     )
 
-    var name by mutableStateOf(initialName)
+    override var name by mutableStateOf(initialName)
     var index by mutableIntStateOf(initialIndex)
 
     /**

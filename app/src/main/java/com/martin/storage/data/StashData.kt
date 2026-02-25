@@ -27,6 +27,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.martin.storage.customUI.RowItem
+import com.martin.storage.customUI.TabItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -36,13 +38,17 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 // --- Constants and Global Variables ---
 
 /**
  * A constant TAG used for logging to easily filter data management-related events in Logcat.
  */
-const val TAG = "DataManagement"
+const val TAG = "StashData"
 
 /**
  * The preference key for storing the main list of storage items in Jetpack DataStore.
@@ -54,21 +60,16 @@ const val STORAGEITEMPATH = "storageItems"
  */
 const val UIDLOCALPATH = "UID"
 
-/**
- * The preference key for storing the timestamp of the last time the app was opened.
- */
-const val LAST_OPENED_KEY = "last_opened"
-
 @Serializable
 data class StashList(
-    val pgName: String,
-    val items: MutableList<LocalRowItem> = mutableListOf<LocalRowItem>(),
+    var pgName: String = "New list",
+    val items: MutableList<RowItem> = mutableListOf(),
     val tabs: MutableList<TabItem> = mutableListOf(TabItem("Tab1", 0))
 )
 
 val stashLists = mutableListOf(
     StashList(
-        pgName = "Fridge"
+        pgName = "List name"
     )
 )
 
@@ -275,4 +276,13 @@ fun saveImageFromUri(
         Log.e("DataManagement", "Error saving image from URI", e)
         null
     }
+}
+
+fun Date.toString(format: String, locale: Locale = Locale.getDefault()): String {
+    val formatter = SimpleDateFormat(format, locale)
+    return formatter.format(this)
+}
+
+fun getCurrentDateTime(): Date {
+    return Calendar.getInstance().time
 }
