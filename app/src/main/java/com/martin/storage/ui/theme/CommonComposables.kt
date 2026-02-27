@@ -2,12 +2,14 @@ package com.martin.storage.ui.theme
 
 import android.content.Intent
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,16 +41,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.martin.storage.EDGEPADDING
 import com.martin.storage.MainActivity
 import com.martin.storage.R
 import com.martin.storage.SettingActivity
 import com.martin.storage.StashActivity
-import com.martin.storage.TOPPADDING
 import kotlinx.coroutines.launch
 
-const val TOPTABHEIGHT = 52
-const val DIALOGPADDING = 13
+const val EDGEPADDING = 20
+const val TEXTFONTSIZE = 16
 
 @Composable
 fun BottomNavigation(modifier: Modifier = Modifier, activeTab: Int) {
@@ -85,8 +85,8 @@ fun TopTitle(modifier: Modifier = Modifier, text: String) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(TOPTABHEIGHT.dp)
-            .padding(start = EDGEPADDING.dp, top = TOPPADDING.dp),
+            .height(52.dp)
+            .padding(start = EDGEPADDING.dp, top = 10.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Text(
@@ -111,36 +111,44 @@ fun BottomPopUp(
     title: String,
     expanded: Boolean,
     onDismissRequest: () -> Unit,
-    buttons: List<DropDownButton>
+    buttons: List<DropDownButton> = emptyList(),
+    fullScreen: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit = {}
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = fullScreen
+    )
     val scope = rememberCoroutineScope()
 
-    if (expanded) {
-        ModalBottomSheet(
-            onDismissRequest = onDismissRequest,
-            sheetState = sheetState,
-            dragHandle = {
-                // Draws the default drag handle without the ripple effect.
-                BottomSheetDefaults.DragHandle(
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {}
-                )
-            }
-        ) {
-            Column(Modifier.padding(bottom = 32.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    textAlign = TextAlign.Center,
-                    fontSize = 30.sp
-                )
+    if (!expanded) return
 
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle()
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (fullScreen)
+                        Modifier
+                    else
+                        Modifier.heightIn(min = 1.dp)
+                )
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 8.dp),
+                textAlign = TextAlign.Center
+            )
+
+            if (buttons.isNotEmpty()) {
                 buttons.forEach { button ->
                     Row(
                         modifier = Modifier
@@ -160,19 +168,17 @@ fun BottomPopUp(
                     ) {
                         if (button.icon != 0) {
                             Icon(
-                                modifier = Modifier.size(21.dp),
                                 painter = painterResource(button.icon),
-                                contentDescription = "search icon",
+                                contentDescription = null,
+                                modifier = Modifier.size(21.dp)
                             )
+                            Spacer(Modifier.width(12.dp))
                         }
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = button.text,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                        Text(button.text)
                     }
                 }
             }
+            content()
         }
     }
 }
@@ -181,7 +187,7 @@ fun BottomPopUp(
 fun SimpleAlertDialog(title: String, message: String, onDismissRequest: () -> Unit) {
     // The AlertDialog composable
     AlertDialog(
-        modifier = Modifier.padding(DIALOGPADDING.dp),
+        modifier = Modifier.padding(13.dp),
         onDismissRequest = onDismissRequest,
         title = {
             Text(title)
@@ -199,7 +205,7 @@ fun SimpleAlertDialog(title: String, message: String, onDismissRequest: () -> Un
 fun Preview(title: String = "wasd", message: String = "wasd", onDismissRequest: () -> Unit = {}) {
     // The AlertDialog composable
     AlertDialog(
-        modifier = Modifier.padding(DIALOGPADDING.dp),
+        modifier = Modifier.padding(13.dp),
         onDismissRequest = onDismissRequest,
         title = {
             Text(title)

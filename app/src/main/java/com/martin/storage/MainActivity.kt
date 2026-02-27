@@ -29,16 +29,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.martin.storage.data.STORAGEITEMPATH
-import com.martin.storage.data.StashList
 import com.martin.storage.data.UIDLOCALPATH
 import com.martin.storage.data.readLocalData
-import com.martin.storage.data.readLocalObjects
-import com.martin.storage.data.stashLists
 import com.martin.storage.ui.theme.AppTheme
 
 // --- Constants ---
 private const val TAG = "MainActivity"
+private const val SKIPSIGNIN = true
 
 /**
  * The main entry point of the application, responsible for checking the user's authentication status.
@@ -77,27 +74,6 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * A generic, reusable composable for loading and caching data from DataStore.
- * It observes a Flow of objects and invokes the `onDataLoaded` callback when data is successfully loaded.
- *
- * @param T The reified type of objects to load (e.g., `LocalRowItem`).
- * @param path The key for the data in DataStore.
- * @param onDataLoaded A callback function to execute when data is loaded.
- */
-@Composable
-inline fun <reified T : Any> LoadAndCache(
-    path: String,
-    crossinline onDataLoaded: (List<T>) -> Unit
-) {
-    val context = LocalContext.current
-    val dataState by readLocalObjects<T>(context, path).collectAsState(initial = null)
-
-    LaunchedEffect(dataState) {
-        dataState?.let(onDataLoaded)
-    }
-}
-
-/**
  * A stateful composable that manages the core logic of `MainActivity`.
  * It observes the user's UID and stored data from DataStore and uses a `LaunchedEffect` to react to
  * changes, either by navigating to the sign-in screen or by populating the in-memory cache.
@@ -113,27 +89,20 @@ fun ReadSavedValues() {
         UIDLOCALPATH
     ).collectAsState(initial = "NOT SIGNED IN")
 
-    // Load and cache users lists.
-    LoadAndCache<StashList>(path = STORAGEITEMPATH) { data ->
-        Log.d(
-            TAG,
-            "Successfully read ${data.size} items from $STORAGEITEMPATH. Updating in-memory cache."
-        )
-        stashLists.removeAll { true }
-        stashLists.addAll(data.toMutableList())
-    }
 
     // `LaunchedEffect` performs side effects like navigation in response to state changes.
-    LaunchedEffect(savedUID, stashLists[0]) {
-        if (savedUID == null) {
-            Log.d(TAG, "User is not signed in. Navigating to SignInActivity.")
-            val intent = Intent(context, SignInActivity::class.java)
-            context.startActivity(intent)
+    if (!SKIPSIGNIN) {
+        LaunchedEffect(savedUID) {
+            if (savedUID == null) {
+                Log.d(TAG, "User is not signed in. Navigating to SignInActivity.")
+                val intent = Intent(context, SignInActivity::class.java)
+                context.startActivity(intent)
+            }
         }
     }
 
     // The main menu button is displayed only if the user is signed in.
-    if (savedUID != null && savedUID != "NOT SIGNED IN") {
+    if (savedUID != null && savedUID != "NOT SIGNED IN" || SKIPSIGNIN) {
         MenuButton(
             callback = { context.startActivity(Intent(context, StashActivity::class.java)) },
             text = "Open"

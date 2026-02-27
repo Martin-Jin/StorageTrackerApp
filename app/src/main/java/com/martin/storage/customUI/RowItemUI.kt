@@ -51,7 +51,7 @@ data class RowItem(
  * @param initialImg The default image resource or path.
  * @param initialCount The starting quantity.
  * @param initialUnit The initial unit of measurement.
- * @param initialPgIndex The default tab index.
+ * @param initialTabIndex The default tab index.
  * @param display A flag indicating whether the item should be displayed, useful for filtering in search results.
  * @param decrement The amount by which the count automatically decreases.
  * @param decrementInterval The period in days for the automatic decrement.
@@ -61,7 +61,7 @@ class RowItemUI(
     initialImg: String = R.drawable.sunflowers.toString(),
     initialCount: Int = 0,
     initialUnit: String = "",
-    initialPgIndex: Int = 0,
+    initialTabIndex: Int = 0,
     var display: Boolean = true,
     var decrement: Int = 1,
     var decrementInterval: Int = 1,
@@ -76,7 +76,7 @@ class RowItemUI(
         initialImg = localItem.img,
         initialCount = localItem.count,
         initialUnit = localItem.unit,
-        initialPgIndex = localItem.pgIndex,
+        initialTabIndex = localItem.pgIndex,
         decrement = localItem.decrement,
         decrementInterval = localItem.decrementInterval,
         lastOpened = localItem.lastOpened // The last date a decrement was recorded
@@ -86,7 +86,7 @@ class RowItemUI(
     var count by mutableIntStateOf(initialCount)
     var unit by mutableStateOf(initialUnit)
     var img by mutableStateOf(initialImg)
-    var pgIndex by mutableIntStateOf(initialPgIndex)
+    var tabIndex by mutableIntStateOf(initialTabIndex)
 
     companion object {
         /**
@@ -142,15 +142,15 @@ class RowItemUI(
 
     /**
      * Converts this UI-layer `RowItem` into a data-layer `LocalRowItem` to be persisted.
-     * @return A `LocalRowItem` instance containing the current data, ready for serialization.
+     * @return A `UIRowItem` instance containing the current data, ready for serialization.
      */
-    fun toLocalRowItem(): RowItem {
+    fun toRowItemUI(): RowItem {
         return RowItem(
             name = this.name,
             img = this.img,
             count = this.count,
             unit = this.unit,
-            pgIndex = this.pgIndex,
+            pgIndex = this.tabIndex,
             decrement = this.decrement,
             decrementInterval = this.decrementInterval,
             lastOpened = this.lastOpened

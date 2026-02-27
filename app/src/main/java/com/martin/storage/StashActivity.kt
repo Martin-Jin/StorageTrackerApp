@@ -3,6 +3,7 @@ package com.martin.storage
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -28,15 +29,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,8 +55,9 @@ import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +65,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,7 +78,6 @@ import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -85,42 +86,32 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import coil.compose.rememberAsyncImagePainter
-import com.martin.storage.customUI.DisplayTabItem
-import com.martin.storage.customUI.DisplayTabItem.Companion.tabToEdit
 import com.martin.storage.customUI.RowItemUI
-import com.martin.storage.customUI.RowItemUI.Companion.decrementByDays
 import com.martin.storage.customUI.RowItemUI.Companion.itemToEdit
+import com.martin.storage.customUI.TabItemUI
+import com.martin.storage.customUI.TabItemUI.Companion.tabToEdit
+import com.martin.storage.data.LoadAndCache
 import com.martin.storage.data.STORAGEITEMPATH
 import com.martin.storage.data.StashList
+import com.martin.storage.data.StashListUI
 import com.martin.storage.data.saveImageFromUri
-import com.martin.storage.data.stashLists
 import com.martin.storage.data.updateStoredValue
 import com.martin.storage.ui.theme.AppTheme
 import com.martin.storage.ui.theme.BottomNavigation
 import com.martin.storage.ui.theme.BottomPopUp
-import com.martin.storage.ui.theme.DIALOGPADDING
 import com.martin.storage.ui.theme.DropDownButton
+import com.martin.storage.ui.theme.EDGEPADDING
 import com.martin.storage.ui.theme.SimpleAlertDialog
+import com.martin.storage.ui.theme.TEXTFONTSIZE
 import kotlinx.coroutines.launch
 import java.io.File
 
 // --- Constants ---
-private const val TAG = "StorageActivity"
-const val TEXTFONTSIZE = 16
-const val ROWBORDERRADIUS = 53
-const val EDGEPADDING = 20
-const val TOPPADDING = 10
-const val ICONSIZE = 26
+private const val TAG = "StashActivity"
+private const val ICONSIZE = 26
 
 // --- Filters by tags or searches ---
 private val nameFilters = mutableStateListOf<String>()
-
-// --- item data ---
-// Displays items based on what page the user is on.
-var currentListIndex = mutableIntStateOf(0)
-private var currentTabIndex = mutableIntStateOf(0)
-private val pageItems = mutableStateListOf<RowItemUI>()
-private val displayTabs = mutableStateListOf<DisplayTabItem>()
 
 /**
  * The primary activity for displaying and managing a user's inventory across different storage locations.
@@ -132,44 +123,55 @@ class StashActivity : ComponentActivity() {
 
     @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+
         super.onCreate(savedInstanceState)
         // Enables edge-to-edge display for a more immersive UI.
         enableEdgeToEdge()
         setContent {
+            var readData = remember { true }
+            val stashLists = remember {
+                mutableStateListOf(StashListUI(mutableStateOf("List")))
+            }
+
+            // Load and cache users lists.
+            LoadAndCache<StashList>(path = STORAGEITEMPATH) { data ->
+                if (readData) {
+                    Log.d(
+                        TAG,
+                        "Successfully read ${data.size} items from $STORAGEITEMPATH. Updating in-memory cache."
+                    )
+                    val readList = data.map { StashListUI(it) }.toMutableStateList()
+                    stashLists.removeAll {true}
+                    stashLists.addAll(readList)
+                    readData = false
+                }
+            }
+
+            val currentListIndex = remember { mutableIntStateOf(0) }
+            val currentTabIndex = remember { mutableIntStateOf(0) }
             val context = LocalContext.current
             val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
-            // Decrease the count of the item based on what the user has set.
-            LaunchedEffect(Unit) {
-                decrementByDays(pageItems)
-            }
+            /**
+             * TODO: Add decrement amount overtime
+             * TODO: Update edit menu
+             */
 
-            // This effect reloads the page's items and tabs whenever the currentPageIndex or the pg name changes.
-            LaunchedEffect(
-                currentListIndex.intValue, // For if the list is changed
-                stashLists[currentListIndex.intValue].pgName, // For if the list is renamed
-                stashLists.size // For if a list is removed
-            ) {
-                pageItems.clear()
-                displayTabs.clear()
-                pageItems.addAll(stashLists[currentListIndex.intValue].items.map { RowItemUI(it) })
-                displayTabs.addAll(stashLists[currentListIndex.intValue].tabs.map {
-                    DisplayTabItem(
-                        it
-                    )
-                })
-            }
             // This effect saves the data when the activity is paused.
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_PAUSE) {
-                        stashLists[currentListIndex.intValue].apply {
-                            items.clear()
-                            tabs.clear()
-                            items.addAll(pageItems.map { it.toLocalRowItem() })
-                            tabs.addAll(displayTabs.map { it.toTabItem() })
-                        }
-                        updateStoredValue(context, lifecycleScope, stashLists, STORAGEITEMPATH)
+                        val listsToSave = stashLists.map { it.toStashList() }
+                        Log.d(
+                            TAG,
+                            "Data saved to $STORAGEITEMPATH as ${stashLists[currentListIndex.intValue].items}"
+                        )
+                        updateStoredValue(
+                            context,
+                            lifecycleScope,
+                            listsToSave.toMutableList(),
+                            STORAGEITEMPATH
+                        )
                     }
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
@@ -177,6 +179,9 @@ class StashActivity : ComponentActivity() {
                     lifecycleOwner.lifecycle.removeObserver(observer)
                 }
             }
+
+            // Menu for editing row items
+            var showEditMenu by remember { mutableStateOf(false) }
 
             AppTheme {
                 // Scaffold provides a standard layout structure for Material Design apps.
@@ -187,34 +192,51 @@ class StashActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
                     Column(modifier = Modifier.padding(innerPadding)) {
-                        TitleElements()
+                        TitleElements(
+                            stashLists[currentListIndex.intValue].items.size,
+                            stashLists[currentListIndex.intValue].listName.value,
+                            currentListIndex,
+                            stashLists
+                        )
+
                         Spacer(modifier = Modifier.height(6.dp))
                         Box {
                             // `Tabs` is the main composable for the screen's primary content.
                             Tabs(
-                                allItems = pageItems,
-                                tabs = displayTabs,
+                                currentListItems = stashLists[currentListIndex.intValue].items,
+                                tabs = stashLists[currentListIndex.intValue].tabs,
                                 onNewTab = {
-                                    displayTabs.add(
-                                        DisplayTabItem(
+                                    stashLists[currentListIndex.intValue].tabs.add(
+                                        TabItemUI(
                                             "Tab",
-                                            displayTabs.size
+                                            stashLists[currentListIndex.intValue].tabs.size
                                         )
                                     )
                                 },
-                                onDeleteTab = { tab -> displayTabs.remove(tab) },
-                                onEditTab = { tab -> tabToEdit.value = tab }
+                                onSwitchTab = { currentTabIndex.intValue = it },
+                                onDeleteTab = { tab ->
+                                    stashLists[currentListIndex.intValue].tabs.remove(
+                                        tab
+                                    )
+                                },
+                                onEditTab = { tab -> tabToEdit.value = tab },
+                                showEditMenu = showEditMenu,
+                                onDismissEditMenu = { showEditMenu = false },
+                                currentListIndex = currentListIndex.intValue,
+                                stashLists = stashLists
                             )
                             // This button provides a way for the user to add a new item.
                             NewRowItemBtn(
                                 modifier = Modifier.align(Alignment.BottomEnd),
-                                onNewItem = {
+                                onClick = {
+                                    showEditMenu = true
+
                                     val newRowItemUI =
                                         RowItemUI(
                                             initialName = "New item",
-                                            initialPgIndex = currentTabIndex.intValue
+                                            initialTabIndex = currentTabIndex.intValue
                                         )
-                                    pageItems.add(newRowItemUI)
+                                    stashLists[currentListIndex.intValue].items.add(newRowItemUI)
                                     itemToEdit.value = newRowItemUI
                                 }
                             )
@@ -243,35 +265,30 @@ fun rowItemFilter(
         return itemsToFilter
     }
 
-    val filteredItems = mutableListOf<RowItemUI>()
-    for (item in itemsToFilter) {
-        for (filter in nameFilter)
-            if (!item.name.contains(other = filter, ignoreCase = true)) {
-                break
-            } else {
-                filteredItems.add(item)
-            }
+    // Use the .filter{} and .all{} collection functions for a more
+    // concise and correct implementation.
+    return itemsToFilter.filter { item ->
+        nameFilter.all { filter ->
+            item.name.contains(filter, ignoreCase = true)
+        }
     }
-    return filteredItems
 }
 
 // --- Main UI Composable ---
 
 /**
  * A button that creates a new `RowItem` and adds it to the list of all items.
- *
- * @param onNewItem A callback to be executed when the button is clicked.
  * @param modifier The modifier to be applied to the button.
  */
 @Composable
-fun NewRowItemBtn(onNewItem: () -> Unit, modifier: Modifier) {
+fun NewRowItemBtn(modifier: Modifier, onClick: () -> Unit = {}) {
     Button(
         shape = RoundedCornerShape(15.dp),
         contentPadding = PaddingValues(5.dp),
         modifier = modifier
             .size(width = 90.dp, height = 90.dp)
             .padding(20.dp),
-        onClick = onNewItem
+        onClick = onClick
     ) {
         Icon(
             painter = painterResource(R.drawable.plus),
@@ -286,18 +303,19 @@ fun NewRowItemBtn(onNewItem: () -> Unit, modifier: Modifier) {
  */
 @Composable
 fun TitleElements(
+    totalItems: Int,
+    listName: String,
+    currentListIndex: MutableIntState,
+    stashLists: SnapshotStateList<StashListUI>
 ) {
-    val totalItems = pageItems.size
-    val currentPageIndex = currentListIndex.intValue
-
     Row(
         modifier = Modifier
-            .padding(horizontal = EDGEPADDING.dp, vertical = TOPPADDING.dp)
+            .padding(horizontal = EDGEPADDING.dp, vertical = 10.dp)
             .fillMaxWidth()
     ) {
         Column {
             Text(
-                text = stashLists[currentPageIndex].pgName,
+                text = listName,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 style = TextStyle(
@@ -315,7 +333,7 @@ fun TitleElements(
         Spacer(modifier = Modifier.width(10.dp))
 
         // Menu for the list
-        ListOptions()
+        ListOptions(currentListIndex = currentListIndex, stashLists = stashLists)
     }
 }
 
@@ -327,8 +345,8 @@ fun SearchIcon(onSearch: (String) -> Unit) {
         painter = painterResource(R.drawable.search_database),
         contentDescription = "search icon",
         modifier = Modifier
-            .pointerInput(Unit) {
-                detectTapGestures { showSearchBar = true }
+            .clickable {
+                showSearchBar = true
             }
             .size(ICONSIZE.dp)
     )
@@ -344,7 +362,7 @@ fun SearchIcon(onSearch: (String) -> Unit) {
 }
 
 @Composable
-fun ListOptions() {
+fun ListOptions(currentListIndex: MutableIntState, stashLists: SnapshotStateList<StashListUI>) {
     var showOptions by remember { mutableStateOf(false) }
     var showEditListDialog by remember { mutableStateOf(false) }
     var showSwitchListPopup by remember { mutableStateOf(false) }
@@ -355,8 +373,8 @@ fun ListOptions() {
             painter = painterResource(R.drawable.listmenu),
             contentDescription = "Tab icon",
             modifier = Modifier
-                .pointerInput(Unit) {
-                    detectTapGestures { showOptions = !showOptions }
+                .clickable {
+                    showOptions = !showOptions
                 }
                 .size(ICONSIZE.dp)
         )
@@ -369,7 +387,7 @@ fun ListOptions() {
             DropdownMenuItem(
                 text = { Text("Add list", color = MaterialTheme.colorScheme.onSecondary) },
                 onClick = {
-                    stashLists.add(StashList("New list"))
+                    stashLists.add(StashListUI(listName = mutableStateOf("New list")))
                     currentListIndex.intValue = (stashLists.size - 1)
                     showEditListDialog = true
                     showOptions = !showOptions
@@ -410,6 +428,7 @@ fun ListOptions() {
                     if (stashLists.size > 1) {
                         stashLists.removeAt(currentListIndex.intValue)
                         currentListIndex.intValue = 0
+                        showOptions = !showOptions
                     } else {
                         showAlert = true
                     }
@@ -430,15 +449,16 @@ fun ListOptions() {
         EditListDialogue(
             onDismiss = { showEditListDialog = !showEditListDialog },
             onSave = { newListName ->
-                stashLists[currentListIndex.intValue].pgName = newListName
+                stashLists[currentListIndex.intValue].listName.value = newListName
                 showEditListDialog = !showEditListDialog
-            }
+            },
+            currentListIndex = currentListIndex.intValue, stashLists = stashLists
         )
     }
 
     if (showSwitchListPopup) {
         val switchListButtons = stashLists.mapIndexed { index, stashList ->
-            DropDownButton(text = stashList.pgName) {
+            DropDownButton(text = stashList.listName.value) {
                 currentListIndex.intValue = index
                 showSwitchListPopup = !showSwitchListPopup
             }
@@ -447,7 +467,8 @@ fun ListOptions() {
             title = "Switch List",
             expanded = true,
             onDismissRequest = { showSwitchListPopup = !showSwitchListPopup },
-            buttons = switchListButtons
+            buttons = switchListButtons,
+            fullScreen = false
         )
     }
 }
@@ -459,8 +480,13 @@ fun ListOptions() {
  * @param onSave A callback to be executed when the user saves the new list.
  */
 @Composable
-fun EditListDialogue(onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    var listName by remember { mutableStateOf(stashLists[currentListIndex.intValue].pgName) }
+fun EditListDialogue(
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+    currentListIndex: Int,
+    stashLists: SnapshotStateList<StashListUI>
+) {
+    var listName by remember { mutableStateOf(stashLists[currentListIndex].listName.value) }
 
     AlertDialog(
         modifier = Modifier.padding(horizontal = 13.dp),
@@ -505,7 +531,7 @@ fun EditListDialogue(onDismiss: () -> Unit, onSave: (String) -> Unit) {
 
 /**
  * A popup dialog that allows the user to enter a search query.
- *
+ * TODO: Fix search bar
  * @param onDismiss A callback to dismiss the dialog.
  * @param onSearch A callback to be executed when the user searches.
  */
@@ -546,43 +572,51 @@ fun SearchBarPopup(onDismiss: () -> Unit, onSearch: (String) -> Unit) {
  * navigation between the different storage locations.
  *
  * @param modifier A `Modifier` passed from the parent.
- * @param allItems The observable list of all storage items, which will be filtered for each tab.
+ * @param currentListItems The observable list of all storage items, which will be filtered for each tab.
  * @param tabs The observable list of all tabs.
  * @param onNewTab A callback to be executed when a new tab is added.
  * @param onDeleteTab A callback to be executed when a tab is deleted.
  * @param onEditTab A callback to be executed when a tab is edited.
+ * @param showEditMenu Whether to show the row edit menu.
+ * @param onDismissEditMenu A callback to be executed when row editing is finished.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Tabs(
     modifier: Modifier = Modifier,
-    allItems: SnapshotStateList<RowItemUI>,
-    tabs: SnapshotStateList<DisplayTabItem>,
+    stashLists: SnapshotStateList<StashListUI>,
+    currentListItems: SnapshotStateList<RowItemUI>,
+    tabs: SnapshotStateList<TabItemUI>,
+    currentListIndex: Int,
+    onSwitchTab: (Int) -> Unit,
     onNewTab: () -> Unit,
-    onDeleteTab: (DisplayTabItem) -> Unit,
-    onEditTab: (DisplayTabItem) -> Unit
+    onDeleteTab: (TabItemUI) -> Unit,
+    onEditTab: (TabItemUI) -> Unit,
+    showEditMenu: Boolean = false,
+    onDismissEditMenu: () -> Unit,
 ) {
-    val pagerState = rememberPagerState(initialPage = 0) { tabs.size }
+    val pagerState = rememberPagerState(
+        initialPage = 0,
+        pageCount = { tabs.size }
+    )
+    LaunchedEffect(tabs.size) {
+        if (pagerState.currentPage >= tabs.size) {
+            pagerState.scrollToPage(maxOf(0, tabs.lastIndex))
+        }
+    }
+
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(pagerState.currentPage) {
-        currentTabIndex.intValue = pagerState.currentPage
+        onSwitchTab(pagerState.currentPage)
     }
-
-    // The dialog for editing an item is defined here but only shown when `itemToEdit.value` is not null.
-    EditItemDialog(
-        itemToEdit = itemToEdit.value,
-        onDismiss = { itemToEdit.value = null },
-        onSave = {
-            itemToEdit.value = null
-        }
-    )
 
     // The dialog for editing a tab is defined here but only shown when `tabToEdit.value` is not null.
     EditTabDialogue(
         tabToEdit.value,
         onDismiss = { tabToEdit.value = null },
-        onSave = { itemToEdit.value = null })
+        onSave = { itemToEdit.value = null }
+    )
 
     Column(modifier.fillMaxSize()) {
         // The `SecondaryScrollableTabRow` provides the tab navigation UI.
@@ -591,61 +625,64 @@ fun Tabs(
             divider = { },
             tabs = {
                 tabs.forEach { tab ->
-                    var showMenu by remember { mutableStateOf(false) }
-                    Tab(
-                        modifier = Modifier
-                            .heightIn(max = 40.dp),
-                        selected = pagerState.currentPage == tab.index,
-                        onClick = {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(tab.index)
-                            }
-                        },
-                        text = {
-                            Text(
-                                modifier = Modifier.pointerInput(Unit) {
-                                    detectTapGestures(
-                                        onLongPress = { showMenu = true },
-                                        onTap = {
-                                            coroutineScope.launch {
-                                                pagerState.animateScrollToPage(tab.index)
+                    key(tab.identifier) {
+                        var showMenu by remember { mutableStateOf(false) }
+                        Tab(
+                            modifier = Modifier
+                                .heightIn(max = 40.dp),
+                            selected = pagerState.currentPage == tab.index,
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(tab.index)
+                                }
+                            },
+                            text = {
+                                Text(
+                                    modifier = Modifier.pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onLongPress = { showMenu = true },
+                                            onTap = {
+                                                coroutineScope.launch {
+                                                    pagerState.animateScrollToPage(tab.index)
+                                                }
                                             }
-                                        }
-                                    )
-                                }, text = tab.name, fontSize = 15.sp
-                            )
-                            BottomPopUp(
-                                title = "Editing tab",
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false },
-                                buttons = listOf(
-                                    DropDownButton(
-                                        text = "Delete",
-                                        icon = R.drawable.outline_delete_24,
-                                        onClick = {
-                                            onDeleteTab(tab)
-                                            showMenu = false
-                                        }
-                                    ),
-                                    DropDownButton(
-                                        text = "Edit",
-                                        icon = R.drawable.outline_edit_24,
-                                        onClick = {
-                                            onEditTab(tab)
-                                            showMenu = false
-                                        }
-                                    )
+                                        )
+                                    }, text = tab.name, fontSize = 15.sp
                                 )
-                            )
-                        },
-                    )
+                                BottomPopUp(
+                                    title = "Editing tab",
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false },
+                                    buttons = listOf(
+                                        DropDownButton(
+                                            text = "Delete",
+                                            icon = R.drawable.outline_delete_24,
+                                            onClick = {
+                                                onDeleteTab(tab)
+                                                showMenu = false
+                                            }
+                                        ),
+                                        DropDownButton(
+                                            text = "Edit",
+                                            icon = R.drawable.outline_edit_24,
+                                            onClick = {
+                                                onEditTab(tab)
+                                                showMenu = false
+                                            }
+                                        )
+                                    ),
+                                    fullScreen = false
+                                )
+                            },
+                        )
+                    }
                 }
                 // A button for adding a new tab category in the future.
                 Button(
                     modifier = Modifier
                         .heightIn(max = 15.dp)
                         .padding(top = 4.dp, start = 8.dp, end = 8.dp, bottom = 4.dp)
-                        .clip(RoundedCornerShape(ROWBORDERRADIUS.dp)),
+                        .clip(RoundedCornerShape(53.dp)),
                     contentPadding = PaddingValues(5.dp),
                     onClick = onNewTab,
                 )
@@ -664,11 +701,17 @@ fun Tabs(
         HorizontalPager(state = pagerState, modifier = modifier.fillMaxSize()) { page ->
             // `derivedStateOf` is a performance optimization. The filter operation only
             // re-runs if `allItems` or `page` changes.
-            val itemsToShow by remember { derivedStateOf { allItems.filter { it.pgIndex == page } } }
+            val itemsToShow = currentListItems.filter {
+                it.tabIndex == page
+            }
             val filteredItems = rowItemFilter(nameFilters, itemsToShow)
             StorageScreen(
-                allItems = allItems,
+                currentListItems = currentListItems,
                 itemsToShow = filteredItems,
+                showEditMenu = showEditMenu,
+                onDismissEditMenu = onDismissEditMenu,
+                currentListIndex = currentListIndex,
+                stashLists = stashLists
             )
         }
     }
@@ -724,7 +767,7 @@ fun DisplayFilters() {
  * @param onSave A callback to save the changes.
  */
 @Composable
-fun EditTabDialogue(tabToEdit: DisplayTabItem?, onDismiss: () -> Unit, onSave: () -> Unit) {
+fun EditTabDialogue(tabToEdit: TabItemUI?, onDismiss: () -> Unit, onSave: () -> Unit) {
 
     if (tabToEdit == null) return
     var tabName by remember(tabToEdit.identifier) { mutableStateOf(tabToEdit.name) }
@@ -774,28 +817,63 @@ fun EditTabDialogue(tabToEdit: DisplayTabItem?, onDismiss: () -> Unit, onSave: (
  * It uses a `LazyColumn` for efficiently displaying a potentially long, scrollable list.
  *
  * @param itemsToShow The filtered list of items to display on this screen.
- * @param allItems The complete list of all items, passed down to be modified by child composables.
+ * @param currentListItems The complete list of all items, passed down to be modified by child composables.
+ * @param showEditMenu Triggers the menu from external composable functions, such as the add row item button.
+ * @param onDismissEditMenu Dismiss the menu from external composables.
  */
 @Composable
 fun StorageScreen(
+    stashLists: SnapshotStateList<StashListUI>,
     itemsToShow: List<RowItemUI>,
-    allItems: SnapshotStateList<RowItemUI>,
+    currentListItems: SnapshotStateList<RowItemUI>,
+    showEditMenu: Boolean = false,
+    onDismissEditMenu: () -> Unit,
+    currentListIndex: Int,
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Providing a unique `key` for each item helps Compose optimize recompositions,
-        // especially when the list changes (items are added, removed, or reordered).
-        items(
-            items = itemsToShow,
-            key = { item -> item.identifier }
-        ) { item ->
-            RowItemUI(
-                rowItemUI = item,
-                onDelete = { allItems.remove(item) },
-                onEdit = { itemToEdit.value = it }
-            )
+    val editRow = remember { mutableStateOf(false) }
+
+    if (showEditMenu || editRow.value) {
+        val item = itemToEdit.value ?: return
+        RowItemFullEditor(
+            currentListItems = currentListItems,
+            item = item,
+            expanded = true,
+            onDismiss = {
+                itemToEdit.value = null
+                editRow.value = false
+                onDismissEditMenu()
+            },
+            currentListIndex = currentListIndex,
+            stashLists = stashLists
+        )
+    }
+
+    val listState = rememberLazyListState()
+    key(currentListIndex) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            state = listState
+        ) {
+            // Providing a unique `key` for each item helps Compose optimize recompositions,
+            // especially when the list changes (items are added, removed, or reordered).
+            items(
+                items = itemsToShow,
+                key = { item -> item.identifier }
+            ) { item ->
+                RowItemUI(
+                    name = item.name,
+                    count = item.count,
+                    unit = item.unit,
+                    img = item.img,
+                    onIncrease = { item.increaseCount() },
+                    onDecrease = { item.decreaseCount() },
+                    onEdit = {
+                        itemToEdit.value = item
+                        editRow.value = true
+                    }
+                )
+            }
         }
     }
 }
@@ -805,32 +883,38 @@ fun StorageScreen(
  * image, name, and quantity, and provides controls for modifying the count and accessing
  * a dropdown menu for editing or deleting the item.
  *
- * @param rowItemUI The `RowItem` data to display.
- * @param onDelete A callback lambda to be executed when the user chooses to delete this item.
+ * @param name The name of the item to display.
+ * @param count The count of the item to display.
+ * @param unit The unit of the item to display.
+ * @param img The image of the item to display.
+ * @param onIncrease A callback lambda to be executed when the user chooses to increase the count of this item.
+ * @param onDecrease A callback lambda to be executed when the user chooses to decrease the count of this item.
  * @param onEdit A callback lambda to set the globally observed `itemToEdit`, triggering the edit dialog.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RowItemUI(
-    rowItemUI: RowItemUI,
-    onDelete: () -> Unit,
-    onEdit: (RowItemUI) -> Unit
+    name: String,
+    count: Int,
+    unit: String,
+    img: String,
+    onIncrease: () -> Unit,
+    onDecrease: () -> Unit,
+    onEdit: () -> Unit
 ) {
-    var showMenu by remember { mutableStateOf(false) }
     // `remember` with `rowItem.img` as a key ensures the image model is re-evaluated
     // only when the image path for this specific item changes.
-    val imageModel = remember(rowItemUI.img) {
+    val imageModel = remember(img) {
         // Handle both local file paths and drawable resource IDs.
-        rowItemUI.img.toIntOrNull() ?: File(rowItemUI.img)
+        img.toIntOrNull() ?: File(img)
     }
-
     Box {
         Card(
             modifier = Modifier
-                .padding(horizontal = (EDGEPADDING + 10).dp)
-                .pointerInput(Unit) {
+                .padding(horizontal = EDGEPADDING.dp)
+                .clickable {
                     // Open the dropdown menu on a simple tap.
-                    detectTapGestures(onTap = { showMenu = true })
+                    onEdit()
                 },
             colors = CardDefaults.cardColors(
                 containerColor = Color.Transparent
@@ -847,7 +931,7 @@ fun RowItemUI(
                 // Asynchronously load and display the item's image using Coil.
                 Image(
                     painter = rememberAsyncImagePainter(model = imageModel),
-                    contentDescription = rowItemUI.name,
+                    contentDescription = name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(50.dp)
@@ -855,7 +939,7 @@ fun RowItemUI(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Row(
-                    modifier = Modifier.widthIn(max = 135.dp),
+                    modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // `basicMarquee` provides a scrolling animation if the item name is too long.
@@ -864,7 +948,7 @@ fun RowItemUI(
                             .weight(1f)
                             .basicMarquee(),
                         textAlign = TextAlign.Left,
-                        text = rowItemUI.name,
+                        text = name,
                         fontSize = (TEXTFONTSIZE + 1).sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
@@ -882,7 +966,7 @@ fun RowItemUI(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.inverseOnSurface
                         ),
-                        onClick = { rowItemUI.increaseCount() },
+                        onClick = { onIncrease() },
                         modifier = Modifier.size(25.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) { Text(text = "+", color = MaterialTheme.colorScheme.onSecondaryContainer) }
@@ -890,9 +974,9 @@ fun RowItemUI(
                     Spacer(modifier = Modifier.width(7.dp))
 
                     // Only show unit if given one
-                    var unitText = "${rowItemUI.count}"
-                    if (rowItemUI.unit != "") {
-                        unitText = "${rowItemUI.count} ${rowItemUI.unit}"
+                    var unitText = "$count"
+                    if (unit != "") {
+                        unitText = "$count $unit"
                     }
 
                     Text(
@@ -908,206 +992,210 @@ fun RowItemUI(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.inverseOnSurface
                         ),
-                        onClick = { rowItemUI.decreaseCount() },
+                        onClick = onDecrease,
                         modifier = Modifier.size(25.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) { Text(text = "-", color = MaterialTheme.colorScheme.onSecondaryContainer) }
                 }
             }
         }
-
-        // The dropdown menu is anchored to the `Box` and is only expanded when `showMenu` is true.
-        BottomPopUp(
-            title = "Editing item: ${rowItemUI.name}",
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false },
-            buttons = listOf(
-                DropDownButton(
-                    text = "Delete",
-                    icon = R.drawable.outline_delete_24,
-                    onClick = {
-                        onDelete()
-                        showMenu = false
-                    }),
-                DropDownButton(
-                    text = "Edit",
-                    icon = R.drawable.outline_edit_24,
-                    onClick = {
-                        onEdit(rowItemUI)
-                        showMenu = false
-                    }
-                )
-            )
-        )
     }
 }
 
-// --- Helper Composable & Previews ---
-/**
- * A comprehensive dialog for creating or editing a storage item. It provides text fields for all
- * item properties, a dropdown for selecting the page/tab, and an image picker.
- *
- * @param itemToEdit The `RowItem` to be edited. If `null`, the dialog is not shown.
- * @param onDismiss A callback to dismiss the dialog without saving changes.
- * @param onSave A callback to save the changes and dismiss the dialog.
- */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun EditItemDialog(
-    itemToEdit: RowItemUI?,
+fun RowItemFullEditor(
+    stashLists: SnapshotStateList<StashListUI>,
+    currentListItems: SnapshotStateList<RowItemUI>,
+    item: RowItemUI,
+    expanded: Boolean,
     onDismiss: () -> Unit,
-    onSave: () -> Unit
+    currentListIndex: Int
 ) {
-    if (itemToEdit == null) return
-
     val context = LocalContext.current
-    // Using `remember` with `itemToEdit.identifier` as a key ensures that the dialog's state
-    // resets correctly when a different item is selected for editing.
-    var nameText by remember(itemToEdit.identifier) { mutableStateOf(itemToEdit.name) }
-    var countText by remember(itemToEdit.identifier) { mutableStateOf(itemToEdit.count.toString()) }
-    var unitText by remember(itemToEdit.identifier) { mutableStateOf(itemToEdit.unit) }
-    var pgIndex by remember(itemToEdit.identifier) { mutableIntStateOf(itemToEdit.pgIndex) }
-    var imgText by remember(itemToEdit.identifier) { mutableStateOf(itemToEdit.img) }
-    var decrementText by remember(itemToEdit.identifier) { mutableStateOf(itemToEdit.decrement.toString()) }
-    var decrementIntervalText by remember(itemToEdit.identifier) { mutableStateOf(itemToEdit.decrementInterval.toString()) }
 
-    // `rememberLauncherForActivityResult` is the modern way to handle activity results in Compose.
+    var count by remember(item.identifier) { mutableIntStateOf(item.count) }
+    var unit by remember(item.identifier) { mutableStateOf(item.unit) }
+    var tabIndex by remember(item.identifier) { mutableIntStateOf(item.tabIndex) }
+    var listIndex by remember(item.identifier) { mutableIntStateOf(currentListIndex) }
+    var imgPath by remember(item.identifier) { mutableStateOf(item.img) }
+
+    val imageModel = remember(imgPath) {
+        imgPath.toIntOrNull() ?: File(imgPath)
+    }
+
     val imagePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-        onResult = { uri: Uri? ->
-            uri?.let {
-                // Save the selected image to internal storage and update the image path state.
-                val imagePath = saveImageFromUri(context, it)
-                if (imagePath != null) {
-                    imgText = imagePath
-                }
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            saveImageFromUri(context, it)?.let { saved ->
+                imgPath = saved
             }
         }
-    )
+    }
 
-    var expanded by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        modifier = Modifier.padding(horizontal = DIALOGPADDING.dp),
+    BottomPopUp(
+        title = "Editing ${item.name}",
+        expanded = expanded,
         onDismissRequest = onDismiss,
-        title = { Text(text = "Edit Item") },
-        text = {
-            Column {
-                TextField(
-                    value = nameText,
-                    onValueChange = { nameText = it },
-                    label = { Text("Name") },
-                    singleLine = true
+        fullScreen = true
+    ) {
+
+        Spacer(Modifier.height(12.dp))
+
+        // --- IMAGE / COUNT / UNIT ROW ---
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+
+            // IMAGE
+            Image(
+                painter = rememberAsyncImagePainter(imageModel),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(90.dp)
+                    .clip(CircleShape)
+                    .clickable { imagePicker.launch("image/*") }
+            )
+
+            Spacer(Modifier.width(16.dp))
+
+            // COUNT
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                tonalElevation = 2.dp,
+                modifier = Modifier
+                    .clickable {
+                        count++
+                    }
+            ) {
+                Text(
+                    text = count.toString(),
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
+                    style = MaterialTheme.typography.headlineMedium
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    TextField(
-                        modifier = Modifier.weight(0.5f),
-                        value = countText,
-                        onValueChange = { countText = it },
-                        label = { Text("Count") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    TextField(
-                        modifier = Modifier.weight(0.5f),
-                        value = unitText,
-                        onValueChange = { unitText = it },
-                        label = { Text("Unit") },
-                        singleLine = true
-                    )
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextField(
-                        value = decrementText,
-                        onValueChange = { decrementText = it },
-                        label = { Text("Decrement") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(130.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("every")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    TextField(
-                        value = decrementIntervalText,
-                        onValueChange = { decrementIntervalText = it },
-                        label = { Text("Days") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Page:")
-                    Spacer(modifier = Modifier.width(13.dp))
-                    Column {
-                        Button(
-                            onClick = { expanded = true },
-                            contentPadding = PaddingValues(5.dp),
-                            modifier = Modifier
-                                .width(65.dp)
-                                .height(30.dp)
-                        ) { Text(stashLists[currentListIndex.intValue].tabs[pgIndex].name) }
-                        val dropDownBtns = mutableListOf<DropDownButton>()
-                        stashLists[currentListIndex.intValue].tabs.forEach { tab ->
-                            dropDownBtns.add(DropDownButton(text = tab.name, onClick = {
-                                pgIndex = tab.index
-                                expanded = false
-                            }))
-                        }
-                        BottomPopUp(
-                            title = "Editing: ${itemToEdit.name} tab",
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false }, buttons = dropDownBtns
-                        )
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text("Image:")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = { imagePicker.launch("image/*") },
-                        contentPadding = PaddingValues(5.dp),
-                        modifier = Modifier
-                            .width(65.dp)
-                            .height(30.dp)
-                    ) {
-                        Text("Upload")
-                    }
-                }
             }
-        },
-        confirmButton = {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                Button(
-                    onClick = {
-                        // When saved, update the original `RowItem` with the new values from the dialog's state.
-                        itemToEdit.name = nameText
-                        itemToEdit.count = countText.toIntOrNull() ?: 0
-                        itemToEdit.unit = unitText
-                        itemToEdit.pgIndex = pgIndex
-                        itemToEdit.img = imgText
-                        itemToEdit.decrement = decrementText.toIntOrNull() ?: 1
-                        itemToEdit.decrementInterval =
-                            decrementIntervalText.toIntOrNull() ?: 1
-                        onSave()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Red,
-                        contentColor = Color.White
-                    )
-                ) { Text(text = "Save") }
-                Spacer(Modifier.width(15.dp))
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Red,
-                        contentColor = Color.White
-                    )
-                ) { Text(text = "Cancel") }
+
+            Spacer(Modifier.width(16.dp))
+
+            // UNIT
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                tonalElevation = 2.dp,
+                modifier = Modifier
+                    .clickable {
+                        unit = if (unit.isEmpty()) "pcs" else ""
+                    }
+            ) {
+                Text(
+                    text = unit.ifEmpty { "unit" },
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
         }
+
+        Spacer(Modifier.height(32.dp))
+
+        // --- TAB SELECTION ---
+        SectionTitle("Tabs")
+
+        val currentTabs = stashLists[currentListIndex].tabs
+
+        LazyColumn(
+            modifier = Modifier.heightIn(max = 180.dp)
+        ) {
+            items(currentTabs) { tab ->
+                val selected = tabIndex == tab.index
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (selected)
+                                MaterialTheme.colorScheme.secondaryContainer
+                            else
+                                Color.Transparent
+                        )
+                        .clickable { tabIndex = tab.index }
+                        .padding(horizontal = 24.dp, vertical = 10.dp)
+                ) {
+                    Text(tab.name)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // --- MOVE TO DIFFERENT LIST ---
+        SectionTitle("Move to List")
+
+        LazyColumn(
+            modifier = Modifier.heightIn(max = 160.dp)
+        ) {
+            items(stashLists.indices.toList()) { index ->
+                val selected = listIndex == index
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (selected)
+                                MaterialTheme.colorScheme.secondaryContainer
+                            else
+                                Color.Transparent
+                        )
+                        .clickable {
+                            listIndex = index
+                        }
+                        .padding(horizontal = 24.dp, vertical = 10.dp)
+                ) {
+                    Text(stashLists[index].listName.value)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(40.dp))
+
+        // --- SAVE BUTTON ---
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            Button(
+                onClick = {
+                    item.count = count
+                    item.unit = unit
+                    item.tabIndex = tabIndex
+                    item.img = imgPath
+
+                    if (listIndex != currentListIndex) {
+                        currentListItems.remove(item)
+                        stashLists[listIndex].items.add(item)
+                    }
+                    onDismiss()
+                },
+                modifier = Modifier
+                    .padding(horizontal = 24.dp)
+            ) {
+                Text(text = "Save Changes")
+            }
+        }
+        Spacer(Modifier.height(40.dp))
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier
+            .padding(horizontal = 24.dp, vertical = 8.dp)
     )
 }
 
+// --- Helper Composable & Previews ---
 /**
  * A preview for the `StorageScreen` composable, allowing for quick UI iteration in Android Studio.
  * This preview simulates the main layout of the activity, including the bottom navigation and a
@@ -1122,7 +1210,10 @@ fun StorageScreenPreview() {
     val allItems = mutableStateListOf(RowItemUI("wasd"))
 
     @SuppressLint("UnrememberedMutableState")
-    val tabs = mutableStateListOf(DisplayTabItem("Tab1", 0))
+    val stashLists = mutableStateListOf(StashListUI(mutableStateOf("List1")))
+
+    @SuppressLint("UnrememberedMutableState")
+    val tabs = mutableStateListOf(TabItemUI("Tab1", 0))
     AppTheme {
         // Scaffold provides a standard layout structure for Material Design apps.
         Scaffold(
@@ -1133,20 +1224,27 @@ fun StorageScreenPreview() {
         ) { innerPadding ->
             Column(modifier = Modifier.padding(innerPadding)) {
                 TitleElements(
+                    allItems.size,
+                    "Test List",
+                    remember { mutableIntStateOf(0) },
+                    stashLists
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Box {
                     // `Tabs` is the main composable for the screen's primary content.
                     Tabs(
-                        allItems = allItems,
+                        currentListItems = allItems,
                         tabs = tabs,
                         onNewTab = {},
                         onDeleteTab = {},
-                        onEditTab = {})
+                        onEditTab = {},
+                        onSwitchTab = {},
+                        currentListIndex = 0,
+                        stashLists = stashLists
+                    ) {}
                     // This button provides a way for the user to add a new item.
                     NewRowItemBtn(
-                        modifier = Modifier.align(Alignment.BottomEnd),
-                        onNewItem = {}
+                        modifier = Modifier.align(Alignment.BottomEnd)
                     )
                 }
             }

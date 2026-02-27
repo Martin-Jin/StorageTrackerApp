@@ -21,6 +21,16 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.scale
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -28,7 +38,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.martin.storage.customUI.RowItem
+import com.martin.storage.customUI.RowItemUI
 import com.martin.storage.customUI.TabItem
+import com.martin.storage.customUI.TabItemUI
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -62,16 +74,36 @@ const val UIDLOCALPATH = "UID"
 
 @Serializable
 data class StashList(
-    var pgName: String = "New list",
+    var listName: String = "New list",
     val items: MutableList<RowItem> = mutableListOf(),
     val tabs: MutableList<TabItem> = mutableListOf(TabItem("Tab1", 0))
-)
+) {
 
-val stashLists = mutableListOf(
-    StashList(
-        pgName = "List name"
+}
+
+class StashListUI(
+    var listName: MutableState<String> = mutableStateOf("String"),
+    var items: SnapshotStateList<RowItemUI> = mutableStateListOf(),
+    var tabs:  SnapshotStateList<TabItemUI> = mutableStateListOf(TabItemUI("Tab1", 0))
+) {
+    constructor(stashList: StashList) : this(
+        listName = mutableStateOf(stashList.listName ),
+        items = stashList.items.map { RowItemUI(it) }.toMutableStateList(),
+        tabs = stashList.tabs.map { TabItemUI(it) }.toMutableStateList(),
     )
-)
+
+    /**
+     * Converts this UI-layer `RowItem` into a data-layer `LocalRowItem` to be persisted.
+     * @return A `UIRowItem` instance containing the current data, ready for serialization.
+     */
+    fun toStashList(): StashList {
+        return StashList(
+            listName = listName.value,
+            items = items.map { it.toRowItemUI() } as MutableList<RowItem>,
+            tabs = tabs.map { it.toTabItem() } as MutableList<TabItem>
+        )
+    }
+}
 
 /**
  * A shared, configured instance of the Kotlinx JSON serializer.
@@ -285,4 +317,25 @@ fun Date.toString(format: String, locale: Locale = Locale.getDefault()): String 
 
 fun getCurrentDateTime(): Date {
     return Calendar.getInstance().time
+}
+
+/**
+ * A generic, reusable composable for loading and caching data from DataStore.
+ * It observes a Flow of objects and invokes the `onDataLoaded` callback when data is successfully loaded.
+ *
+ * @param T The reified type of objects to load (e.g., `LocalRowItem`).
+ * @param path The key for the data in DataStore.
+ * @param onDataLoaded A callback function to execute when data is loaded.
+ */
+@Composable
+inline fun <reified T : Any> LoadAndCache(
+    path: String,
+    crossinline onDataLoaded: (List<T>) -> Unit
+) {
+    val context = LocalContext.current
+    val dataState by readLocalObjects<T>(context, path).collectAsState(initial = null)
+
+    LaunchedEffect(dataState) {
+        dataState?.let(onDataLoaded)
+    }
 }

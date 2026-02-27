@@ -36,9 +36,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.martin.storage.data.stashLists
 import com.martin.storage.ui.theme.AppTheme
 import com.martin.storage.ui.theme.BottomNavigation
+import com.martin.storage.ui.theme.EDGEPADDING
+import com.martin.storage.ui.theme.TEXTFONTSIZE
 import com.martin.storage.ui.theme.TopTitle
 
 // --- Constants ---
@@ -72,13 +73,6 @@ object DividerItem : SettingItem()
  * @param text The text to display as a subtitle.
  */
 data class SubtitleItem(val text: String) : SettingItem()
-
-/**
- * A data class representing a list item in the settings screen.
- *
- * @param text The text to display on the button.
- */
-data class ListItem(val text: String) : SettingItem()
 
 var settingsItems = listOf<SettingItem>()
 
@@ -118,9 +112,6 @@ class SettingActivity : ComponentActivity() {
                         context.startActivity(intent)
                     },
                     DividerItem,
-                    SubtitleItem("Lists"),
-                    ListItem("List"),
-                    DividerItem,
                     ButtonItem("About", R.drawable.copyright) {
                         context.startActivity(intent)
                     }
@@ -149,25 +140,6 @@ class SettingActivity : ComponentActivity() {
                                         icon = item.icon,
                                         onClick = item.onClick
                                     )
-
-                                    is ListItem ->
-                                        for (list in stashLists) {
-                                            SettingButton(
-                                                text = list.pgName,
-                                                icon = R.drawable.label,
-                                                onClick = {
-                                                    currentListIndex.intValue =
-                                                        stashLists.indexOf(list)
-                                                    context.startActivity(
-                                                        Intent(
-                                                            context,
-                                                            StashActivity::class.java
-                                                        )
-                                                    )
-                                                }
-                                            )
-                                        }
-
                                     is DividerItem -> HorizontalDivider()
                                     is SubtitleItem -> SettingSubTitle(item.text)
                                 }
@@ -278,15 +250,6 @@ fun PreviewSettings() {
                                 icon = item.icon,
                                 onClick = item.onClick
                             )
-
-                            is ListItem ->
-                                for (list in stashLists) {
-                                    SettingButton(
-                                        text = list.pgName,
-                                        icon = 0,
-                                        onClick = { }
-                                    )
-                                }
 
                             is DividerItem -> HorizontalDivider(modifier = Modifier.padding(vertical = 5.dp))
                             is SubtitleItem -> SettingSubTitle(item.text)

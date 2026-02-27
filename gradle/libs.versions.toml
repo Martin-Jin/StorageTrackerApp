@@ -4,7 +4,7 @@ coilCompose = "2.7.0"
 coreKtx = "1.17.0"
 credentials = "1.5.0"
 datastorePreferences = "1.2.0"
-firebaseBom = "34.9.0"
+firebaseBom = "34.10.0"
 googleid = "1.2.0"
 gson = "2.13.2"
 junit = "4.13.2"
@@ -21,8 +21,9 @@ appcompat = "1.7.1"
 material = "1.13.0"
 activity = "1.12.4"
 composeMaterial = "1.5.6"
-foundation = "1.10.3"
-uiText = "1.10.3"
+foundation = "1.10.4"
+uiText = "1.10.4"
+foundationLayout = "1.10.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -58,6 +59,7 @@ androidx-activity = { group = "androidx.activity", name = "activity", version.re
 androidx-compose-material = { group = "androidx.wear.compose", name = "compose-material", version.ref = "composeMaterial" }
 androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "foundation" }
 androidx-compose-ui-text = { group = "androidx.compose.ui", name = "ui-text", version.ref = "uiText" }
+androidx-compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

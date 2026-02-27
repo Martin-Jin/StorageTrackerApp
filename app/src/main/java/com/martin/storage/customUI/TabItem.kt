@@ -24,7 +24,7 @@ data class TabItem(val name: String = "New tab", val index: Int)
  * @param initialName The initial name for the tab.
  * @param initialIndex The initial index of the tab.
  */
-class DisplayTabItem(
+class TabItemUI(
     initialName: String = "New tab",
     initialIndex: Int
 ): UserInterface(initialName, "") {
@@ -33,7 +33,7 @@ class DisplayTabItem(
          * A global, observable state that holds the `DisplayTabItem` currently being edited.
          * When this is set to a `DisplayTabItem`, the `EditTabDialogue` will be shown.
          */
-        var tabToEdit = mutableStateOf<DisplayTabItem?>(null)
+        var tabToEdit = mutableStateOf<TabItemUI?>(null)
     }
 
     /**
