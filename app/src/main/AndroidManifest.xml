@@ -14,6 +14,7 @@
         android:theme="@style/Theme.Test">
         <activity
             android:name="com.martin.storage.StashActivity"
+            android:windowSoftInputMode="adjustNothing"
             android:exported="false" />
         <activity
             android:name="com.martin.storage.EmptyActivity"

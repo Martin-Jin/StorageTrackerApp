@@ -1,7 +1,6 @@
 package com.martin.storage
 
 import android.annotation.SuppressLint
-import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -19,6 +18,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imeNestedScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,6 +38,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -44,8 +47,13 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryScrollableTabRow
 import androidx.compose.material3.Surface
@@ -56,6 +64,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -78,6 +87,7 @@ import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -85,6 +95,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
+import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import com.martin.storage.customUI.RowItemUI
 import com.martin.storage.customUI.RowItemUI.Companion.itemToEdit
@@ -141,7 +152,7 @@ class StashActivity : ComponentActivity() {
                         "Successfully read ${data.size} items from $STORAGEITEMPATH. Updating in-memory cache."
                     )
                     val readList = data.map { StashListUI(it) }.toMutableStateList()
-                    stashLists.removeAll {true}
+                    stashLists.removeAll { true }
                     stashLists.addAll(readList)
                     readData = false
                 }
@@ -793,6 +804,7 @@ fun EditTabDialogue(tabToEdit: TabItemUI?, onDismiss: () -> Unit, onSave: () -> 
                         // When saved, update the original `RowItem` with the new values from the dialog's state.
                         tabToEdit.name = tabName
                         onSave()
+                        onDismiss()
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -1002,7 +1014,36 @@ fun RowItemUI(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@Stable
+class RowItemEditorState(
+    item: RowItemUI,
+    currentListIndex: Int
+) {
+    var countText by mutableStateOf(item.count.toString())
+    var unitText by mutableStateOf(item.unit)
+
+    var tabIndex by mutableIntStateOf(item.tabIndex)
+    var listIndex by mutableIntStateOf(currentListIndex)
+
+    var imgPath by mutableStateOf(item.img)
+
+    var tabExpanded by mutableStateOf(false)
+    var listExpanded by mutableStateOf(false)
+}
+
+
+@Composable
+fun rememberRowItemEditorState(
+    item: RowItemUI,
+    currentListIndex: Int
+): RowItemEditorState {
+    return remember(item.identifier) {
+        RowItemEditorState(item, currentListIndex)
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RowItemFullEditor(
     stashLists: SnapshotStateList<StashListUI>,
@@ -1012,25 +1053,29 @@ fun RowItemFullEditor(
     onDismiss: () -> Unit,
     currentListIndex: Int
 ) {
+
     val context = LocalContext.current
+    val editorState = rememberRowItemEditorState(item, currentListIndex)
 
-    var count by remember(item.identifier) { mutableIntStateOf(item.count) }
-    var unit by remember(item.identifier) { mutableStateOf(item.unit) }
-    var tabIndex by remember(item.identifier) { mutableIntStateOf(item.tabIndex) }
-    var listIndex by remember(item.identifier) { mutableIntStateOf(currentListIndex) }
-    var imgPath by remember(item.identifier) { mutableStateOf(item.img) }
+    // Freeze UI data to prevent SnapshotStateList recompositions
+    val tabs = remember(currentListIndex) {
+        stashLists[currentListIndex].tabs.toList()
+    }
 
-    val imageModel = remember(imgPath) {
-        imgPath.toIntOrNull() ?: File(imgPath)
+    val listNames = remember {
+        stashLists.map { it.listName.value }
+    }
+
+    val imageModel = remember(editorState.imgPath) {
+        editorState.imgPath.toIntOrNull() ?: File(editorState.imgPath)
     }
 
     val imagePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            saveImageFromUri(context, it)?.let { saved ->
-                imgPath = saved
-            }
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        saveImageFromUri(context, uri)?.let {
+            editorState.imgPath = it
         }
     }
 
@@ -1041,159 +1086,238 @@ fun RowItemFullEditor(
         fullScreen = true
     ) {
 
-        Spacer(Modifier.height(12.dp))
+        EditorLayout(
+            editorState = editorState,
+            imageModel = imageModel,
+            tabs = tabs,
+            listNames = listNames,
+            onPickImage = { imagePicker.launch("image/*") },
+            onSave = {
 
-        // --- IMAGE / COUNT / UNIT ROW ---
+                val count = editorState.countText.toIntOrNull() ?: 0
+
+                item.count = count
+                item.unit = editorState.unitText
+                item.tabIndex = editorState.tabIndex
+                item.img = editorState.imgPath
+
+                if (editorState.listIndex != currentListIndex) {
+                    currentListItems.remove(item)
+                    stashLists[editorState.listIndex].items.add(item)
+                }
+
+                onDismiss()
+            }
+        )
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun EditorLayout(
+    editorState: RowItemEditorState,
+    imageModel: Any,
+    tabs: List<TabItemUI>,
+    listNames: List<String>,
+    onPickImage: () -> Unit,
+    onSave: () -> Unit
+) {
+
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .verticalScroll(scrollState)
+            .imeNestedScroll()
+    ) {
+
+        Spacer(Modifier.height(24.dp))
+
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
         ) {
 
-            // IMAGE
-            Image(
-                painter = rememberAsyncImagePainter(imageModel),
+            AsyncImage(
+                model = imageModel,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(90.dp)
+                    .size(120.dp)
                     .clip(CircleShape)
-                    .clickable { imagePicker.launch("image/*") }
+                    .clickable { onPickImage() }
             )
-
-            Spacer(Modifier.width(16.dp))
-
-            // COUNT
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                tonalElevation = 2.dp,
-                modifier = Modifier
-                    .clickable {
-                        count++
-                    }
-            ) {
-                Text(
-                    text = count.toString(),
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
-                    style = MaterialTheme.typography.headlineMedium
-                )
-            }
-
-            Spacer(Modifier.width(16.dp))
-
-            // UNIT
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                tonalElevation = 2.dp,
-                modifier = Modifier
-                    .clickable {
-                        unit = if (unit.isEmpty()) "pcs" else ""
-                    }
-            ) {
-                Text(
-                    text = unit.ifEmpty { "unit" },
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
         }
 
         Spacer(Modifier.height(32.dp))
 
-        // --- TAB SELECTION ---
-        SectionTitle("Tabs")
-
-        val currentTabs = stashLists[currentListIndex].tabs
-
-        LazyColumn(
-            modifier = Modifier.heightIn(max = 180.dp)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(currentTabs) { tab ->
-                val selected = tabIndex == tab.index
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            if (selected)
-                                MaterialTheme.colorScheme.secondaryContainer
-                            else
-                                Color.Transparent
-                        )
-                        .clickable { tabIndex = tab.index }
-                        .padding(horizontal = 24.dp, vertical = 10.dp)
-                ) {
-                    Text(tab.name)
-                }
-            }
+
+            OutlinedTextField(
+                value = editorState.countText,
+                onValueChange = { editorState.countText = it },
+                label = { Text("Count") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number
+                ),
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+
+            OutlinedTextField(
+                value = editorState.unitText,
+                onValueChange = { editorState.unitText = it },
+                label = { Text("Unit") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(28.dp))
 
-        // --- MOVE TO DIFFERENT LIST ---
-        SectionTitle("Move to List")
+        TabDropdown(
+            tabs = tabs,
+            selectedTabIndex = editorState.tabIndex,
+            expanded = editorState.tabExpanded,
+            onExpandedChange = { editorState.tabExpanded = it },
+            onTabSelected = { editorState.tabIndex = it }
+        )
 
-        LazyColumn(
-            modifier = Modifier.heightIn(max = 160.dp)
+        Spacer(Modifier.height(20.dp))
+
+        ListDropdown(
+            listNames = listNames,
+            selectedIndex = editorState.listIndex,
+            expanded = editorState.listExpanded,
+            onExpandedChange = { editorState.listExpanded = it },
+            onSelected = { editorState.listIndex = it }
+        )
+
+        Spacer(Modifier.weight(1f))
+
+        Button(
+            onClick = onSave,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 32.dp)
         ) {
-            items(stashLists.indices.toList()) { index ->
-                val selected = listIndex == index
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            if (selected)
-                                MaterialTheme.colorScheme.secondaryContainer
-                            else
-                                Color.Transparent
-                        )
-                        .clickable {
-                            listIndex = index
-                        }
-                        .padding(horizontal = 24.dp, vertical = 10.dp)
-                ) {
-                    Text(stashLists[index].listName.value)
-                }
-            }
+            Text("Save Changes")
         }
-
-        Spacer(Modifier.height(40.dp))
-
-        // --- SAVE BUTTON ---
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            Button(
-                onClick = {
-                    item.count = count
-                    item.unit = unit
-                    item.tabIndex = tabIndex
-                    item.img = imgPath
-
-                    if (listIndex != currentListIndex) {
-                        currentListItems.remove(item)
-                        stashLists[listIndex].items.add(item)
-                    }
-                    onDismiss()
-                },
-                modifier = Modifier
-                    .padding(horizontal = 24.dp)
-            ) {
-                Text(text = "Save Changes")
-            }
-        }
-        Spacer(Modifier.height(40.dp))
     }
 }
 
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier
-            .padding(horizontal = 24.dp, vertical = 8.dp)
-    )
+fun TabDropdown(
+    tabs: List<TabItemUI>,
+    selectedTabIndex: Int,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onTabSelected: (Int) -> Unit
+) {
+
+    val selectedName = remember(selectedTabIndex, tabs) {
+        tabs.firstOrNull { it.index == selectedTabIndex }?.name ?: ""
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = onExpandedChange
+    ) {
+
+        OutlinedTextField(
+            value = selectedName,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Tab") },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(
+                    type = ExposedDropdownMenuAnchorType.PrimaryNotEditable,
+                    enabled = true
+                )
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) }
+        ) {
+
+            tabs.forEach { tab ->
+                DropdownMenuItem(
+                    text = { Text(tab.name) },
+                    onClick = {
+                        onTabSelected(tab.index)
+                        onExpandedChange(false)
+                    }
+                )
+            }
+        }
+    }
 }
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ListDropdown(
+    listNames: List<String>,
+    selectedIndex: Int,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelected: (Int) -> Unit
+) {
+
+    val selectedName = listNames.getOrElse(selectedIndex) { "" }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = onExpandedChange
+    ) {
+
+        OutlinedTextField(
+            value = selectedName,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Move to list") },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(
+                    type = ExposedDropdownMenuAnchorType.PrimaryNotEditable,
+                    enabled = true
+                )
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) }
+        ) {
+
+            listNames.forEachIndexed { index, name ->
+                DropdownMenuItem(
+                    text = { Text(name) },
+                    onClick = {
+                        onSelected(index)
+                        onExpandedChange(false)
+                    }
+                )
+            }
+        }
+    }
+}
+
+
 
 // --- Helper Composable & Previews ---
 /**
