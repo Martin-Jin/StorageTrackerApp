@@ -2,17 +2,19 @@ package com.martin.storage.ui.theme
 
 import android.content.Intent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,11 +26,11 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +47,6 @@ import com.martin.storage.MainActivity
 import com.martin.storage.R
 import com.martin.storage.SettingActivity
 import com.martin.storage.StashActivity
-import kotlinx.coroutines.launch
 
 const val EDGEPADDING = 20
 const val TEXTFONTSIZE = 16
@@ -115,70 +116,96 @@ fun BottomPopUp(
     fullScreen: Boolean = false,
     content: @Composable ColumnScope.() -> Unit = {}
 ) {
-    val sheetState = rememberModalBottomSheetState(
-        skipPartiallyExpanded = fullScreen
-    )
-    val scope = rememberCoroutineScope()
 
     if (!expanded) return
+
+    val sheetState = rememberModalBottomSheetState(
+        confirmValueChange = { true }
+    )
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
-        dragHandle = {
-            BottomSheetDefaults.DragHandle()
-        }
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)
     ) {
+
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .then(
-                    if (fullScreen)
-                        Modifier
-                    else
-                        Modifier.heightIn(min = 1.dp)
+                    if (fullScreen) Modifier.fillMaxHeight()
+                    else Modifier.wrapContentHeight()
                 )
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 8.dp),
-                textAlign = TextAlign.Center
-            )
+
+            if (title.isNotEmpty()) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp, bottom = 12.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
 
             if (buttons.isNotEmpty()) {
-                buttons.forEach { button ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                scope.launch {
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                ) {
+
+                    buttons.forEach { button ->
+
+                        // Pre-measure touch target for smoother click handling
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() }
+                                ) {
                                     button.onClick()
-                                    sheetState.hide()
-                                }.invokeOnCompletion {
-                                    if (!sheetState.isVisible) {
-                                        onDismissRequest()
-                                    }
                                 }
+                                .padding(horizontal = 24.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+
+                                if (button.icon != 0) {
+                                    Icon(
+                                        painter = painterResource(button.icon),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+
+                                    Spacer(Modifier.width(14.dp))
+                                }
+
+                                Text(
+                                    text = button.text,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
                             }
-                            .padding(horizontal = 24.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (button.icon != 0) {
-                            Icon(
-                                painter = painterResource(button.icon),
-                                contentDescription = null,
-                                modifier = Modifier.size(21.dp)
-                            )
-                            Spacer(Modifier.width(12.dp))
                         }
-                        Text(button.text)
                     }
                 }
             }
+
             content()
+        }
+    }
+
+    // Force sheet dismissal cleanup after animation
+    LaunchedEffect(expanded) {
+        if (!expanded && sheetState.isVisible) {
+            sheetState.hide()
         }
     }
 }

@@ -9,7 +9,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -26,7 +25,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imeNestedScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,6 +36,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -60,11 +59,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -78,25 +79,32 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import coil.compose.AsyncImage
-import coil.compose.rememberAsyncImagePainter
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.martin.storage.customUI.RowItemUI
 import com.martin.storage.customUI.RowItemUI.Companion.itemToEdit
 import com.martin.storage.customUI.TabItemUI
@@ -114,6 +122,7 @@ import com.martin.storage.ui.theme.DropDownButton
 import com.martin.storage.ui.theme.EDGEPADDING
 import com.martin.storage.ui.theme.SimpleAlertDialog
 import com.martin.storage.ui.theme.TEXTFONTSIZE
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -138,6 +147,7 @@ class StashActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Enables edge-to-edge display for a more immersive UI.
         enableEdgeToEdge()
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
             var readData = remember { true }
             val stashLists = remember {
@@ -542,31 +552,59 @@ fun EditListDialogue(
 
 /**
  * A popup dialog that allows the user to enter a search query.
- * TODO: Fix search bar
  * @param onDismiss A callback to dismiss the dialog.
  * @param onSearch A callback to be executed when the user searches.
  */
 @Composable
-fun SearchBarPopup(onDismiss: () -> Unit, onSearch: (String) -> Unit) {
+fun SearchBarPopup(
+    onDismiss: () -> Unit,
+    onSearch: (String) -> Unit
+) {
+
     var searchQuery by remember { mutableStateOf("") }
 
     AlertDialog(
         containerColor = Color.Transparent,
         onDismissRequest = onDismiss,
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) { Text(text = "Search") }
+        title = null,
+        text = {
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+
+                Text(
+                    text = "Search",
+                    style = MaterialTheme.typography.titleLarge
+                )
+
+                Spacer(Modifier.height(14.dp))
+
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search items...") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth(0.9f)
+                )
+            }
         },
+
         confirmButton = {
+
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center
             ) {
                 Button(
                     onClick = {
                         onSearch(searchQuery)
+                        onDismiss()
                     }
                 ) {
                     Text("Search")
@@ -712,10 +750,16 @@ fun Tabs(
         HorizontalPager(state = pagerState, modifier = modifier.fillMaxSize()) { page ->
             // `derivedStateOf` is a performance optimization. The filter operation only
             // re-runs if `allItems` or `page` changes.
-            val itemsToShow = currentListItems.filter {
-                it.tabIndex == page
+
+            val filteredItems by remember(currentListItems, nameFilters, page) {
+                derivedStateOf {
+                    currentListItems
+                        .asSequence()
+                        .filter { it.tabIndex == page }
+                        .filter { rowItemFilter(nameFilters, listOf(it)).isNotEmpty() }
+                        .toList()
+                }
             }
-            val filteredItems = rowItemFilter(nameFilters, itemsToShow)
             StorageScreen(
                 currentListItems = currentListItems,
                 itemsToShow = filteredItems,
@@ -843,8 +887,11 @@ fun StorageScreen(
     currentListIndex: Int,
 ) {
     val editRow = remember { mutableStateOf(false) }
+    val showEditor = remember(showEditMenu, editRow.value) {
+        showEditMenu || editRow.value
+    }
 
-    if (showEditMenu || editRow.value) {
+    if (showEditor) {
         val item = itemToEdit.value ?: return
         RowItemFullEditor(
             currentListItems = currentListItems,
@@ -860,7 +907,9 @@ fun StorageScreen(
         )
     }
 
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = 0
+    )
     key(currentListIndex) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -941,8 +990,12 @@ fun RowItemUI(
                 horizontalArrangement = Arrangement.Center
             ) {
                 // Asynchronously load and display the item's image using Coil.
-                Image(
-                    painter = rememberAsyncImagePainter(model = imageModel),
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(imageModel)
+                        .crossfade(true)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .build(),
                     contentDescription = name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -1019,6 +1072,7 @@ class RowItemEditorState(
     item: RowItemUI,
     currentListIndex: Int
 ) {
+    var nameText by mutableStateOf(item.name)
     var countText by mutableStateOf(item.count.toString())
     var unitText by mutableStateOf(item.unit)
 
@@ -1062,8 +1116,10 @@ fun RowItemFullEditor(
         stashLists[currentListIndex].tabs.toList()
     }
 
-    val listNames = remember {
-        stashLists.map { it.listName.value }
+    val listNames by remember {
+        derivedStateOf {
+            stashLists.map { it.listName.value }
+        }
     }
 
     val imageModel = remember(editorState.imgPath) {
@@ -1080,11 +1136,57 @@ fun RowItemFullEditor(
     }
 
     BottomPopUp(
-        title = "Editing ${item.name}",
+        title = "",
         expanded = expanded,
         onDismissRequest = onDismiss,
         fullScreen = true
     ) {
+        val focusRequester = remember { FocusRequester() }
+        var isTitleFocused by remember { mutableStateOf(false) }
+        val keyboardController = LocalSoftwareKeyboardController.current
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+
+            TextField(
+                value = editorState.nameText,
+                onValueChange = { editorState.nameText = it },
+                textStyle = MaterialTheme.typography.headlineSmall.copy(
+                    textAlign = TextAlign.Center
+                ),
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth(0.8f)
+                    .focusRequester(focusRequester)
+                    .onFocusChanged {
+                        isTitleFocused = it.isFocused
+                    },
+                colors = TextFieldDefaults.colors(
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                ),
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        keyboardController?.hide()
+                    }
+                )
+            )
+
+            LaunchedEffect(Unit) {
+                delay(50)
+                focusRequester.requestFocus()
+            }
+        }
 
         EditorLayout(
             editorState = editorState,
@@ -1096,6 +1198,7 @@ fun RowItemFullEditor(
 
                 val count = editorState.countText.toIntOrNull() ?: 0
 
+                item.name = editorState.nameText
                 item.count = count
                 item.unit = editorState.unitText
                 item.tabIndex = editorState.tabIndex
@@ -1106,6 +1209,10 @@ fun RowItemFullEditor(
                     stashLists[editorState.listIndex].items.add(item)
                 }
 
+                onDismiss()
+            },
+            onDelete = {
+                stashLists[currentListIndex].items.remove(itemToEdit.value)
                 onDismiss()
             }
         )
@@ -1121,7 +1228,8 @@ private fun EditorLayout(
     tabs: List<TabItemUI>,
     listNames: List<String>,
     onPickImage: () -> Unit,
-    onSave: () -> Unit
+    onSave: () -> Unit,
+    onDelete: () -> Unit
 ) {
 
     val scrollState = rememberScrollState()
@@ -1131,7 +1239,6 @@ private fun EditorLayout(
             .fillMaxSize()
             .padding(horizontal = 24.dp)
             .verticalScroll(scrollState)
-            .imeNestedScroll()
     ) {
 
         Spacer(Modifier.height(24.dp))
@@ -1140,9 +1247,12 @@ private fun EditorLayout(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center
         ) {
-
             AsyncImage(
-                model = imageModel,
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(imageModel)
+                    .crossfade(true)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -1200,13 +1310,29 @@ private fun EditorLayout(
 
         Spacer(Modifier.weight(1f))
 
-        Button(
-            onClick = onSave,
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 32.dp)
+                .padding(bottom = 32.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Save Changes")
+
+            Button(
+                onClick = onSave,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Save")
+            }
+
+            Button(
+                onClick = onDelete,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("Delete")
+            }
         }
     }
 }
