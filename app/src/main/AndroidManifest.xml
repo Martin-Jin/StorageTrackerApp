@@ -3,6 +3,11 @@
     package="com.martin.storage"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -21,6 +26,9 @@
             android:exported="false" />
         <activity
             android:name="com.martin.storage.SignInActivity"
+            android:exported="false" />
+        <activity
+            android:name="com.martin.storage.ReceiptScannerActivity"
             android:exported="false" />
         <activity
             android:name="com.martin.storage.SettingActivity"

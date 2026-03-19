@@ -1,8 +1,10 @@
 package com.martin.storage
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -36,9 +38,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -79,28 +79,23 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
@@ -113,6 +108,7 @@ import com.martin.storage.data.LoadAndCache
 import com.martin.storage.data.STORAGEITEMPATH
 import com.martin.storage.data.StashList
 import com.martin.storage.data.StashListUI
+import com.martin.storage.data.receipt.ReceiptScannerLauncher
 import com.martin.storage.data.saveImageFromUri
 import com.martin.storage.data.updateStoredValue
 import com.martin.storage.ui.theme.AppTheme
@@ -122,7 +118,6 @@ import com.martin.storage.ui.theme.DropDownButton
 import com.martin.storage.ui.theme.EDGEPADDING
 import com.martin.storage.ui.theme.SimpleAlertDialog
 import com.martin.storage.ui.theme.TEXTFONTSIZE
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -140,19 +135,59 @@ private val nameFilters = mutableStateListOf<String>()
  * adding, editing, and deleting items. It also handles lifecycle events to persist data.
  */
 class StashActivity : ComponentActivity() {
-
     @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-
         super.onCreate(savedInstanceState)
         // Enables edge-to-edge display for a more immersive UI.
         enableEdgeToEdge()
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.setSoftInputMode(SOFT_INPUT_ADJUST_NOTHING)
         setContent {
             var readData = remember { true }
             val stashLists = remember {
                 mutableStateListOf(StashListUI(mutableStateOf("List")))
             }
+
+            val currentListIndex = remember { mutableIntStateOf(0) }
+            val currentTabIndex = remember { mutableIntStateOf(0) }
+            val context = LocalContext.current
+            val lifecycleOwner = LocalLifecycleOwner.current
+
+            val launcher =
+                rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+
+                    if (result.resultCode == RESULT_OK) {
+
+                        val items =
+                            ReceiptScannerLauncher.parseResult(result.data)
+
+                        // Adding times to the list
+                        items.forEach { item ->
+                            val rowItemUI =
+                                RowItemUI(
+                                    initialName = item.name,
+                                    initialCount = item.quantity?.toInt() ?: 0,
+                                    initialUnit = item.unit ?: "",
+                                    initialTabIndex = 0,
+                                )
+
+                            val currentList = stashLists[currentListIndex.intValue].items
+
+                            currentList.apply {
+                                val index = indexOfFirst { it.name == item.name }
+
+                                if (index >= 0) {
+                                    this[index] = rowItemUI
+                                } else {
+                                    add(rowItemUI)
+                                }
+                            }
+                            stashLists[currentListIndex.intValue].items = currentList
+                        }
+                    }
+                }
+            val receiptScanner = remember(launcher) { ReceiptScannerLauncher(launcher) }
 
             // Load and cache users lists.
             LoadAndCache<StashList>(path = STORAGEITEMPATH) { data ->
@@ -168,14 +203,8 @@ class StashActivity : ComponentActivity() {
                 }
             }
 
-            val currentListIndex = remember { mutableIntStateOf(0) }
-            val currentTabIndex = remember { mutableIntStateOf(0) }
-            val context = LocalContext.current
-            val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-
             /**
              * TODO: Add decrement amount overtime
-             * TODO: Update edit menu
              */
 
             // This effect saves the data when the activity is paused.
@@ -244,7 +273,8 @@ class StashActivity : ComponentActivity() {
                                 showEditMenu = showEditMenu,
                                 onDismissEditMenu = { showEditMenu = false },
                                 currentListIndex = currentListIndex.intValue,
-                                stashLists = stashLists
+                                stashLists = stashLists,
+                                openReceiptScanner = { openReceiptScanner(receiptScanner) }
                             )
                             // This button provides a way for the user to add a new item.
                             NewRowItemBtn(
@@ -266,6 +296,10 @@ class StashActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    fun openReceiptScanner(receiptScanner: ReceiptScannerLauncher) {
+        receiptScanner.launch(this)
     }
 }
 
@@ -643,6 +677,7 @@ fun Tabs(
     onEditTab: (TabItemUI) -> Unit,
     showEditMenu: Boolean = false,
     onDismissEditMenu: () -> Unit,
+    openReceiptScanner: () -> Unit
 ) {
     val pagerState = rememberPagerState(
         initialPage = 0,
@@ -766,7 +801,8 @@ fun Tabs(
                 showEditMenu = showEditMenu,
                 onDismissEditMenu = onDismissEditMenu,
                 currentListIndex = currentListIndex,
-                stashLists = stashLists
+                stashLists = stashLists,
+                openReceiptScanner = openReceiptScanner
             )
         }
     }
@@ -885,6 +921,7 @@ fun StorageScreen(
     showEditMenu: Boolean = false,
     onDismissEditMenu: () -> Unit,
     currentListIndex: Int,
+    openReceiptScanner: () -> Unit
 ) {
     val editRow = remember { mutableStateOf(false) }
     val showEditor = remember(showEditMenu, editRow.value) {
@@ -903,7 +940,8 @@ fun StorageScreen(
                 onDismissEditMenu()
             },
             currentListIndex = currentListIndex,
-            stashLists = stashLists
+            stashLists = stashLists,
+            openReceiptScanner = openReceiptScanner
         )
     }
 
@@ -922,7 +960,7 @@ fun StorageScreen(
                 items = itemsToShow,
                 key = { item -> item.identifier }
             ) { item ->
-                RowItemUI(
+                RowItemComposable(
                     name = item.name,
                     count = item.count,
                     unit = item.unit,
@@ -954,7 +992,7 @@ fun StorageScreen(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun RowItemUI(
+fun RowItemComposable(
     name: String,
     count: Int,
     unit: String,
@@ -1008,10 +1046,11 @@ fun RowItemUI(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // `basicMarquee` provides a scrolling animation if the item name is too long.
+                    val shouldMarquee = remember { name.length > 20 }
                     Text(
                         modifier = Modifier
                             .weight(1f)
-                            .basicMarquee(),
+                            .then(if (shouldMarquee) Modifier.basicMarquee() else Modifier),
                         textAlign = TextAlign.Left,
                         text = name,
                         fontSize = (TEXTFONTSIZE + 1).sp,
@@ -1105,7 +1144,8 @@ fun RowItemFullEditor(
     item: RowItemUI,
     expanded: Boolean,
     onDismiss: () -> Unit,
-    currentListIndex: Int
+    currentListIndex: Int,
+    openReceiptScanner: () -> Unit
 ) {
 
     val context = LocalContext.current
@@ -1116,11 +1156,7 @@ fun RowItemFullEditor(
         stashLists[currentListIndex].tabs.toList()
     }
 
-    val listNames by remember {
-        derivedStateOf {
-            stashLists.map { it.listName.value }
-        }
-    }
+    val listNames = stashLists.map { it.listName.value }
 
     val imageModel = remember(editorState.imgPath) {
         editorState.imgPath.toIntOrNull() ?: File(editorState.imgPath)
@@ -1141,9 +1177,6 @@ fun RowItemFullEditor(
         onDismissRequest = onDismiss,
         fullScreen = true
     ) {
-        val focusRequester = remember { FocusRequester() }
-        var isTitleFocused by remember { mutableStateOf(false) }
-        val keyboardController = LocalSoftwareKeyboardController.current
 
         Column(
             modifier = Modifier
@@ -1160,11 +1193,7 @@ fun RowItemFullEditor(
                 ),
                 singleLine = true,
                 modifier = Modifier
-                    .fillMaxWidth(0.8f)
-                    .focusRequester(focusRequester)
-                    .onFocusChanged {
-                        isTitleFocused = it.isFocused
-                    },
+                    .fillMaxWidth(0.8f),
                 colors = TextFieldDefaults.colors(
                     unfocusedContainerColor = Color.Transparent,
                     focusedContainerColor = Color.Transparent,
@@ -1172,20 +1201,7 @@ fun RowItemFullEditor(
                     unfocusedIndicatorColor = Color.Transparent,
                     focusedIndicatorColor = MaterialTheme.colorScheme.primary
                 ),
-                keyboardOptions = KeyboardOptions(
-                    imeAction = ImeAction.Done
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        keyboardController?.hide()
-                    }
-                )
             )
-
-            LaunchedEffect(Unit) {
-                delay(50)
-                focusRequester.requestFocus()
-            }
         }
 
         EditorLayout(
@@ -1214,7 +1230,8 @@ fun RowItemFullEditor(
             onDelete = {
                 stashLists[currentListIndex].items.remove(itemToEdit.value)
                 onDismiss()
-            }
+            },
+            openReceiptScanner = openReceiptScanner
         )
     }
 }
@@ -1229,109 +1246,145 @@ private fun EditorLayout(
     listNames: List<String>,
     onPickImage: () -> Unit,
     onSave: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    openReceiptScanner: () -> Unit
 ) {
 
-    val scrollState = rememberScrollState()
+    val context = LocalContext.current
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp)
-            .verticalScroll(scrollState)
+            .padding(horizontal = 24.dp),
+        contentPadding = PaddingValues(bottom = 32.dp) // prevents keyboard overlap
     ) {
 
-        Spacer(Modifier.height(24.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(imageModel)
-                    .crossfade(true)
-                    .diskCachePolicy(CachePolicy.ENABLED)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(120.dp)
-                    .clip(CircleShape)
-                    .clickable { onPickImage() }
-            )
+        item {
+            Spacer(Modifier.height(24.dp))
         }
 
-        Spacer(Modifier.height(32.dp))
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-
-            OutlinedTextField(
-                value = editorState.countText,
-                onValueChange = { editorState.countText = it },
-                label = { Text("Count") },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number
-                ),
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
-
-            OutlinedTextField(
-                value = editorState.unitText,
-                onValueChange = { editorState.unitText = it },
-                label = { Text("Unit") },
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Spacer(Modifier.height(28.dp))
-
-        TabDropdown(
-            tabs = tabs,
-            selectedTabIndex = editorState.tabIndex,
-            expanded = editorState.tabExpanded,
-            onExpandedChange = { editorState.tabExpanded = it },
-            onTabSelected = { editorState.tabIndex = it }
-        )
-
-        Spacer(Modifier.height(20.dp))
-
-        ListDropdown(
-            listNames = listNames,
-            selectedIndex = editorState.listIndex,
-            expanded = editorState.listExpanded,
-            onExpandedChange = { editorState.listExpanded = it },
-            onSelected = { editorState.listIndex = it }
-        )
-
-        Spacer(Modifier.weight(1f))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 32.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-
-            Button(
-                onClick = onSave,
-                modifier = Modifier.weight(1f)
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
             ) {
-                Text("Save")
-            }
-
-            Button(
-                onClick = onDelete,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(imageModel)
+                        .crossfade(true)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clip(CircleShape)
+                        .clickable { onPickImage() }
                 )
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(32.dp))
+        }
+
+        item {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Delete")
+
+                OutlinedTextField(
+                    value = editorState.countText,
+                    onValueChange = { editorState.countText = it },
+                    label = { Text("Count") },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number
+                    ),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+
+                OutlinedTextField(
+                    value = editorState.unitText,
+                    onValueChange = { editorState.unitText = it },
+                    label = { Text("Unit") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(28.dp))
+        }
+
+        item {
+            TabDropdown(
+                tabs = tabs,
+                selectedTabIndex = editorState.tabIndex,
+                expanded = editorState.tabExpanded,
+                onExpandedChange = { editorState.tabExpanded = it },
+                onTabSelected = { editorState.tabIndex = it }
+            )
+        }
+
+        item {
+            Spacer(Modifier.height(20.dp))
+        }
+
+        item {
+            ListDropdown(
+                listNames = listNames,
+                selectedIndex = editorState.listIndex,
+                expanded = editorState.listExpanded,
+                onExpandedChange = { editorState.listExpanded = it },
+                onSelected = { editorState.listIndex = it }
+            )
+        }
+
+        item {
+            Spacer(Modifier.height(32.dp))
+        }
+
+        item {
+            val cameraPermissionLauncher =
+                rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { granted ->
+                    if (granted) {
+                        openReceiptScanner()
+                    }
+                }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+
+                Button(
+                    onClick = onSave,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Save")
+                }
+
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
+                ) {
+                    Text("Scan")
+                }
+
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = onDelete,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
             }
         }
     }
@@ -1444,7 +1497,6 @@ fun ListDropdown(
 }
 
 
-
 // --- Helper Composable & Previews ---
 /**
  * A preview for the `StorageScreen` composable, allowing for quick UI iteration in Android Studio.
@@ -1490,8 +1542,10 @@ fun StorageScreenPreview() {
                         onEditTab = {},
                         onSwitchTab = {},
                         currentListIndex = 0,
-                        stashLists = stashLists
-                    ) {}
+                        stashLists = stashLists,
+                        openReceiptScanner = {},
+                        onDismissEditMenu = {}
+                    )
                     // This button provides a way for the user to add a new item.
                     NewRowItemBtn(
                         modifier = Modifier.align(Alignment.BottomEnd)
