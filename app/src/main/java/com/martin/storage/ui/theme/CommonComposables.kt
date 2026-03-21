@@ -8,14 +8,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,7 +26,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -118,95 +116,86 @@ fun BottomPopUp(
     content: @Composable ColumnScope.() -> Unit = {}
 ) {
 
-    if (!expanded) return
-
     val sheetState = rememberModalBottomSheetState(
-        skipPartiallyExpanded = true,
-        confirmValueChange = { true }
+        skipPartiallyExpanded = true // 👈 THIS is the key
     )
-    ModalBottomSheet(
-        modifier = Modifier.windowInsetsPadding(WindowInsets(0)),
-                onDismissRequest = onDismissRequest,
-        sheetState = sheetState,
-        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)
-    ) {
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (fullScreen) Modifier.fillMaxHeight()
-                    else Modifier.wrapContentHeight()
-                )
+    if (expanded) {
+        ModalBottomSheet(
+            sheetState = sheetState,
+            onDismissRequest = onDismissRequest,
+            scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)
         ) {
 
-            if (title.isNotEmpty()) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp, bottom = 12.dp),
-                    textAlign = TextAlign.Center
-                )
-            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .imePadding().then(
+                        if (fullScreen) Modifier.fillMaxHeight()
+                        else Modifier.wrapContentHeight()
+                    )
+            ) {
 
-            if (buttons.isNotEmpty()) {
+                if (title.isNotEmpty()) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp, bottom = 12.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                ) {
+                if (buttons.isNotEmpty()) {
 
-                    buttons.forEach { button ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                    ) {
+                        val interactionSource = remember { MutableInteractionSource() }
+                        buttons.forEach { button ->
 
-                        // Pre-measure touch target for smoother click handling
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                                .clickable(
-                                    indication = null,
-                                    interactionSource = remember { MutableInteractionSource() }
-                                ) {
-                                    button.onClick()
-                                }
-                                .padding(horizontal = 24.dp),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
+                            // Pre-measure touch target for smoother click handling
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp)
+                                    .clickable(
+                                        indication = null,
+                                        interactionSource = interactionSource
+                                    ) {
+                                        button.onClick()
+                                    }
+                                    .padding(horizontal = 24.dp),
+                                contentAlignment = Alignment.CenterStart
                             ) {
 
-                                if (button.icon != 0) {
-                                    Icon(
-                                        painter = painterResource(button.icon),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+
+                                    if (button.icon != 0) {
+                                        Icon(
+                                            painter = painterResource(button.icon),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+
+                                        Spacer(Modifier.width(14.dp))
+                                    }
+
+                                    Text(
+                                        text = button.text,
+                                        style = MaterialTheme.typography.bodyLarge
                                     )
-
-                                    Spacer(Modifier.width(14.dp))
                                 }
-
-                                Text(
-                                    text = button.text,
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
                             }
                         }
                     }
                 }
+                content()
             }
-
-            content()
-        }
-    }
-
-    // Force sheet dismissal cleanup after animation
-    LaunchedEffect(expanded) {
-        if (!expanded && sheetState.isVisible) {
-            sheetState.hide()
         }
     }
 }

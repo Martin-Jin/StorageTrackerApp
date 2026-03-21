@@ -273,9 +273,19 @@ class StashActivity : ComponentActivity() {
                                 showEditMenu = showEditMenu,
                                 onDismissEditMenu = { showEditMenu = false },
                                 currentListIndex = currentListIndex.intValue,
-                                stashLists = stashLists,
-                                openReceiptScanner = { openReceiptScanner(receiptScanner) }
+                                stashLists = stashLists
                             )
+
+
+                            val cameraPermissionLauncher =
+                                rememberLauncherForActivityResult(
+                                    ActivityResultContracts.RequestPermission()
+                                ) { granted ->
+                                    if (granted) {
+                                        openReceiptScanner(receiptScanner)
+                                    }
+                                }
+
                             // This button provides a way for the user to add a new item.
                             NewRowItemBtn(
                                 modifier = Modifier.align(Alignment.BottomEnd),
@@ -290,6 +300,7 @@ class StashActivity : ComponentActivity() {
                                     stashLists[currentListIndex.intValue].items.add(newRowItemUI)
                                     itemToEdit.value = newRowItemUI
                                 }
+                                , launchReceiptScanner = {cameraPermissionLauncher.launch(Manifest.permission.CAMERA)}
                             )
                         }
                     }
@@ -336,7 +347,7 @@ fun rowItemFilter(
  * @param modifier The modifier to be applied to the button.
  */
 @Composable
-fun NewRowItemBtn(modifier: Modifier, onClick: () -> Unit = {}) {
+fun NewRowItemBtn(modifier: Modifier, onClick: () -> Unit = {}, launchReceiptScanner: () -> Unit = {}) {
     Button(
         shape = RoundedCornerShape(15.dp),
         contentPadding = PaddingValues(5.dp),
@@ -349,7 +360,12 @@ fun NewRowItemBtn(modifier: Modifier, onClick: () -> Unit = {}) {
             painter = painterResource(R.drawable.plus),
             contentDescription = "Add new item"
         )
-    }
+            Button(
+                onClick = launchReceiptScanner
+            ) {
+                Text("Scan")
+            }
+        }
 }
 
 /**
@@ -548,7 +564,7 @@ fun EditListDialogue(
         onDismissRequest = onDismiss,
         title = { Text(text = "Edit list") },
         text = {
-            TextField(
+            OutlinedTextField(
                 value = listName,
                 onValueChange = { listName = it },
                 label = { Text("List name") },
@@ -676,8 +692,7 @@ fun Tabs(
     onDeleteTab: (TabItemUI) -> Unit,
     onEditTab: (TabItemUI) -> Unit,
     showEditMenu: Boolean = false,
-    onDismissEditMenu: () -> Unit,
-    openReceiptScanner: () -> Unit
+    onDismissEditMenu: () -> Unit
 ) {
     val pagerState = rememberPagerState(
         initialPage = 0,
@@ -777,7 +792,9 @@ fun Tabs(
         )
         if (nameFilters.isNotEmpty()) {
             Spacer(modifier = Modifier.height(10.dp))
-            DisplayFilters()
+            DisplayTags(nameFilters) {
+                nameFilters.remove(it)
+            }
         }
         Spacer(modifier = Modifier.height(18.dp))
 
@@ -801,8 +818,7 @@ fun Tabs(
                 showEditMenu = showEditMenu,
                 onDismissEditMenu = onDismissEditMenu,
                 currentListIndex = currentListIndex,
-                stashLists = stashLists,
-                openReceiptScanner = openReceiptScanner
+                stashLists = stashLists
             )
         }
     }
@@ -812,7 +828,10 @@ fun Tabs(
  * A composable that displays the current search filters as dismissible pills.
  */
 @Composable
-fun DisplayFilters() {
+fun DisplayTags(filters: List<String>?, onRemove: (String) -> Unit) {
+    if (filters == null) {
+        return
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -820,10 +839,10 @@ fun DisplayFilters() {
             .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (nameFilters.isNotEmpty()) {
-            Text("Filters: ", fontSize = 14.sp)
+        if (filters.isNotEmpty()) {
+            Text("Tags: ", fontSize = 14.sp)
         }
-        for (filter in nameFilters) {
+        for (filter in filters) {
             Surface(
                 modifier = Modifier.padding(horizontal = 4.dp),
                 shape = RoundedCornerShape(16.dp),
@@ -841,7 +860,7 @@ fun DisplayFilters() {
                         text = "x",
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
-                            .clickable { nameFilters.remove(filter) }
+                            .clickable { onRemove(filter) }
                             .padding(2.dp)
                     )
                 }
@@ -920,8 +939,7 @@ fun StorageScreen(
     currentListItems: SnapshotStateList<RowItemUI>,
     showEditMenu: Boolean = false,
     onDismissEditMenu: () -> Unit,
-    currentListIndex: Int,
-    openReceiptScanner: () -> Unit
+    currentListIndex: Int
 ) {
     val editRow = remember { mutableStateOf(false) }
     val showEditor = remember(showEditMenu, editRow.value) {
@@ -941,7 +959,6 @@ fun StorageScreen(
             },
             currentListIndex = currentListIndex,
             stashLists = stashLists,
-            openReceiptScanner = openReceiptScanner
         )
     }
 
@@ -1122,6 +1139,8 @@ class RowItemEditorState(
 
     var tabExpanded by mutableStateOf(false)
     var listExpanded by mutableStateOf(false)
+    var tagsText by mutableStateOf("")
+    var tags = item.tags.toMutableStateList()
 }
 
 
@@ -1144,8 +1163,7 @@ fun RowItemFullEditor(
     item: RowItemUI,
     expanded: Boolean,
     onDismiss: () -> Unit,
-    currentListIndex: Int,
-    openReceiptScanner: () -> Unit
+    currentListIndex: Int
 ) {
 
     val context = LocalContext.current
@@ -1178,32 +1196,32 @@ fun RowItemFullEditor(
         fullScreen = true
     ) {
 
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
-            TextField(
-                value = editorState.nameText,
-                onValueChange = { editorState.nameText = it },
-                textStyle = MaterialTheme.typography.headlineSmall.copy(
-                    textAlign = TextAlign.Center
-                ),
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth(0.8f),
-                colors = TextFieldDefaults.colors(
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedIndicatorColor = MaterialTheme.colorScheme.primary
-                ),
-            )
+            item {
+                TextField(
+                    value = editorState.nameText,
+                    onValueChange = { editorState.nameText = it },
+                    textStyle = MaterialTheme.typography.headlineSmall.copy(
+                        textAlign = TextAlign.Center
+                    ),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth(0.8f),
+                    colors = TextFieldDefaults.colors(
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                    ),
+                )
+            }
         }
-
         EditorLayout(
             editorState = editorState,
             imageModel = imageModel,
@@ -1219,6 +1237,7 @@ fun RowItemFullEditor(
                 item.unit = editorState.unitText
                 item.tabIndex = editorState.tabIndex
                 item.img = editorState.imgPath
+                item.tags = editorState.tagsText.splitToSequence(", ").toMutableList()
 
                 if (editorState.listIndex != currentListIndex) {
                     currentListItems.remove(item)
@@ -1230,8 +1249,7 @@ fun RowItemFullEditor(
             onDelete = {
                 stashLists[currentListIndex].items.remove(itemToEdit.value)
                 onDismiss()
-            },
-            openReceiptScanner = openReceiptScanner
+            }
         )
     }
 }
@@ -1247,7 +1265,6 @@ private fun EditorLayout(
     onPickImage: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
-    openReceiptScanner: () -> Unit
 ) {
 
     val context = LocalContext.current
@@ -1256,7 +1273,6 @@ private fun EditorLayout(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 24.dp),
-        contentPadding = PaddingValues(bottom = 32.dp) // prevents keyboard overlap
     ) {
 
         item {
@@ -1284,9 +1300,14 @@ private fun EditorLayout(
             }
         }
 
+        item { Spacer(Modifier.height(15.dp)) }
         item {
-            Spacer(Modifier.height(32.dp))
+            DisplayTags(editorState.tags) { string ->
+                itemToEdit.value?.tags?.remove(string)
+                editorState.tags.remove(string)
+            }
         }
+        item { Spacer(Modifier.height(20.dp)) }
 
         item {
             Row(
@@ -1343,19 +1364,34 @@ private fun EditorLayout(
         }
 
         item {
+            Spacer(Modifier.height(20.dp))
+        }
+
+        // Text field for item tags
+        item {
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = editorState.tagsText,
+                onValueChange = {
+                    editorState.tagsText = it
+                },
+                label = { Text("Tags (separate by \", \"") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text
+                ),
+                singleLine = true,
+            )
+        }
+
+        item {
+            Spacer(Modifier.height(20.dp))
+        }
+
+        item {
             Spacer(Modifier.height(32.dp))
         }
 
         item {
-            val cameraPermissionLauncher =
-                rememberLauncherForActivityResult(
-                    ActivityResultContracts.RequestPermission()
-                ) { granted ->
-                    if (granted) {
-                        openReceiptScanner()
-                    }
-                }
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth(),
@@ -1367,13 +1403,6 @@ private fun EditorLayout(
                     modifier = Modifier.weight(1f),
                 ) {
                     Text("Save")
-                }
-
-                Button(
-                    modifier = Modifier.weight(1f),
-                    onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
-                ) {
-                    Text("Scan")
                 }
 
                 Button(
@@ -1543,7 +1572,6 @@ fun StorageScreenPreview() {
                         onSwitchTab = {},
                         currentListIndex = 0,
                         stashLists = stashLists,
-                        openReceiptScanner = {},
                         onDismissEditMenu = {}
                     )
                     // This button provides a way for the user to add a new item.

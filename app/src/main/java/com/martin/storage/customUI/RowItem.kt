@@ -38,6 +38,7 @@ data class RowItem(
     val pgIndex: Int,
     val decrement: Int = 1,
     val decrementInterval: Int,
+    val tags: List<String> = listOf(),
     val lastOpened: String = ""
 )
 
@@ -62,6 +63,7 @@ class RowItemUI(
     initialCount: Int = 0,
     initialUnit: String = "",
     initialTabIndex: Int = 0,
+    var tags: MutableList<String> = mutableListOf(),
     var display: Boolean = true,
     var decrement: Int = 1,
     var decrementInterval: Int = 1,
@@ -71,15 +73,16 @@ class RowItemUI(
      * A secondary constructor that creates a `RowItem` for the UI layer from a `LocalRowItem` from the data layer.
      * This simplifies the process of converting persisted data into a stateful UI object.
      */
-    constructor(localItem: RowItem) : this(
-        initialName = localItem.name,
-        initialImg = localItem.img,
-        initialCount = localItem.count,
-        initialUnit = localItem.unit,
-        initialTabIndex = localItem.pgIndex,
-        decrement = localItem.decrement,
-        decrementInterval = localItem.decrementInterval,
-        lastOpened = localItem.lastOpened // The last date a decrement was recorded
+    constructor(rowItem: RowItem) : this(
+        initialName = rowItem.name,
+        initialImg = rowItem.img,
+        initialCount = rowItem.count,
+        initialUnit = rowItem.unit,
+        initialTabIndex = rowItem.pgIndex,
+        decrement = rowItem.decrement,
+        decrementInterval = rowItem.decrementInterval,
+        lastOpened = rowItem.lastOpened, // The last date a decrement was recorded
+        tags = rowItem.tags.toMutableList()
     )
 
     override var name by mutableStateOf(initialName)
@@ -153,7 +156,8 @@ class RowItemUI(
             pgIndex = this.tabIndex,
             decrement = this.decrement,
             decrementInterval = this.decrementInterval,
-            lastOpened = this.lastOpened
+            lastOpened = this.lastOpened,
+            tags = this.tags,
         )
     }
 }

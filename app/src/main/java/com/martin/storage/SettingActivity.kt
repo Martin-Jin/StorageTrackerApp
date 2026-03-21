@@ -89,6 +89,8 @@ class SettingActivity : ComponentActivity() {
         setContent {
             val context = LocalContext.current
             val intent = Intent(context, EmptyActivity::class.java)
+            val mealPlannerIntent = Intent(context, PlannerActivity::class.java)
+
 
             settingsItems = remember {
                 listOf(
@@ -108,8 +110,8 @@ class SettingActivity : ComponentActivity() {
                     },
                     DividerItem,
                     SubtitleItem("Utility"),
-                    ButtonItem("Low stock items", R.drawable.checklist) {
-                        context.startActivity(intent)
+                    ButtonItem("Meal planner", R.drawable.checklist) {
+                        context.startActivity(mealPlannerIntent)
                     },
                     DividerItem,
                     ButtonItem("About", R.drawable.copyright) {
