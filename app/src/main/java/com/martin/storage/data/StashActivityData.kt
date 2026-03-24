@@ -16,17 +16,40 @@
  */
 package com.martin.storage.data
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.martin.storage.customUI.RowItem
 import com.martin.storage.customUI.RowItemUI
 import com.martin.storage.customUI.TabItem
 import com.martin.storage.customUI.TabItemUI
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.util.Locale
 
 // --- Constants and Global Variables ---
 
@@ -84,4 +107,117 @@ class StashListUI(
 val json = Json {
     encodeDefaults = true
     ignoreUnknownKeys = true
+}
+@Composable
+fun FilterPopup(
+    availableTags: List<String>,
+    onApplyFilter: (tag: String?, ascending: Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedFilter by remember { mutableStateOf("tags") }
+    var selectedTag by remember { mutableStateOf<String?>(null) }
+    var ascending by remember { mutableStateOf(true) }
+    var showFilterDropdown by remember { mutableStateOf(false) }
+    var showTagDropdown by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Filter Items") },
+        text = {
+            Column {
+
+                // Filter type dropdown
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Filter by: ")
+                    Spacer(Modifier.width(8.dp))
+                    Box {
+                        Button(onClick = { showFilterDropdown = !showFilterDropdown }) {
+                            Text(selectedFilter.replaceFirstChar { if (it.isLowerCase()) it.titlecase(
+                                Locale.ROOT) else it.toString() })
+                        }
+                        DropdownMenu(
+                            expanded = showFilterDropdown,
+                            onDismissRequest = { showFilterDropdown = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Tags") },
+                                onClick = { selectedFilter = "tags"; showFilterDropdown = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Date") },
+                                onClick = { selectedFilter = "date"; showFilterDropdown = false }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // If "Date" is selected, show ascending/descending buttons
+                if (selectedFilter == "date") {
+                    Text("Sort Order")
+                    Spacer(Modifier.height(4.dp))
+                    Row {
+                        Button(
+                            onClick = { ascending = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (ascending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Ascending", color = if (ascending) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { ascending = false },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (!ascending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Descending", color = if (!ascending) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                // Tag selection dropdown
+                if (selectedFilter == "tags") {
+                    Box {
+                        Button(onClick = { showTagDropdown = !showTagDropdown }) {
+                            Text(selectedTag ?: "Select tag")
+                        }
+                        DropdownMenu(
+                            expanded = showTagDropdown,
+                            onDismissRequest = { showTagDropdown = false }
+                        ) {
+                            availableTags.forEach { tag ->
+                                DropdownMenuItem(
+                                    text = { Text(tag) },
+                                    onClick = { selectedTag = tag; showTagDropdown = false }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row (modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                Button(onClick = {
+                    onApplyFilter(
+                        if (selectedFilter == "tags") selectedTag else null,
+                        ascending
+                    )
+                    onDismiss()
+                }) {
+                    Text("Apply")
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        },
+    )
 }

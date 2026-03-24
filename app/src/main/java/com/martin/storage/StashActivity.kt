@@ -105,6 +105,7 @@ import com.martin.storage.customUI.RowItemUI
 import com.martin.storage.customUI.RowItemUI.Companion.itemToEdit
 import com.martin.storage.customUI.TabItemUI
 import com.martin.storage.customUI.TabItemUI.Companion.tabToEdit
+import com.martin.storage.data.FilterPopup
 import com.martin.storage.data.LoadAndCache
 import com.martin.storage.data.STORAGEITEMPATH
 import com.martin.storage.data.StashList
@@ -127,7 +128,7 @@ private const val TAG = "StashActivity"
 private const val ICONSIZE = 26
 
 // --- Filters by tags or searches ---
-private val nameFilters = mutableStateListOf<String>()
+private val appliedFilters = mutableStateListOf<String>()
 
 /**
  * The primary activity for displaying and managing a user's inventory across different storage locations.
@@ -371,6 +372,28 @@ fun TitleElements(
     currentListIndex: MutableIntState,
     stashLists: SnapshotStateList<StashListUI>
 ) {
+
+    var showFilterPopup by remember { mutableStateOf(false) }
+    if (showFilterPopup) {
+        FilterPopup(
+            availableTags = listOf("Fruit", "Dairy", "Meat"), // your dynamic tags
+            onApplyFilter = { tag, ascending ->
+                // Remove any existing tag filter first
+                appliedFilters.removeAll { it.startsWith("Tag:") }
+
+                // Add new tag filter if selected
+                tag?.let { appliedFilters.add("Tag: $it") }
+
+                // Update sort order
+//                sortAscending = ascending
+
+                // Close the popup
+                showFilterPopup = false
+            },
+            onDismiss = { showFilterPopup = false }
+        )
+    }
+
     Row(
         modifier = Modifier
             .padding(horizontal = EDGEPADDING.dp, vertical = 10.dp)
@@ -392,33 +415,56 @@ fun TitleElements(
             )
         }
         Spacer(modifier = Modifier.weight(1f))
-        SearchIcon(onSearch = { query -> nameFilters.add(query) })
+        SearchIcon(onSearch = { query -> appliedFilters.add(query) }, onFilterSelected = {  showFilterPopup = true })
         Spacer(modifier = Modifier.width(10.dp))
 
         // Menu for the list
         ListOptions(currentListIndex = currentListIndex, stashLists = stashLists)
     }
+
 }
 
 @Composable
-fun SearchIcon(onSearch: (String) -> Unit) {
+fun SearchIcon(
+    onSearch: (String) -> Unit,
+    onFilterSelected: () -> Unit
+) {
     var showSearchBar by remember { mutableStateOf(false) }
-    // Search button
-    Icon(
-        painter = painterResource(R.drawable.search_database),
-        contentDescription = "search icon",
-        modifier = Modifier
-            .clickable {
+    var showMenu by remember { mutableStateOf(false) }
+
+    Box {
+        // Icon with dropdown
+        Icon(
+            painter = painterResource(R.drawable.search_database),
+            contentDescription = "search icon",
+            modifier = Modifier
+                .clickable { showMenu = true }
+                .size(ICONSIZE.dp)
+        )
+
+        // Dropdown Menu
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            DropdownMenuItem(text = { Text("Search") }, onClick = {
+                showMenu = false
                 showSearchBar = true
-            }
-            .size(ICONSIZE.dp)
-    )
+            })
+            DropdownMenuItem(text = { Text("Filter") }, onClick = {
+                showMenu = false
+                onFilterSelected()
+            })
+        }
+    }
+
+    // Search Popup
     if (showSearchBar) {
         SearchBarPopup(
-            onDismiss = { showSearchBar = !showSearchBar },
+            onDismiss = { showSearchBar = false },
             onSearch = { query ->
                 onSearch(query)
-                showSearchBar = !showSearchBar
+                showSearchBar = false
             }
         )
     }
@@ -781,10 +827,10 @@ fun Tabs(
                 }
             }
         )
-        if (nameFilters.isNotEmpty()) {
+        if (appliedFilters.isNotEmpty()) {
             Spacer(modifier = Modifier.height(10.dp))
-            DisplayTags(nameFilters) {
-                nameFilters.remove(it)
+            DisplayFilters(appliedFilters) {
+                appliedFilters.remove(it)
             }
         }
         Spacer(modifier = Modifier.height(18.dp))
@@ -794,13 +840,13 @@ fun Tabs(
             // `derivedStateOf` is a performance optimization. The filter operation only
             // re-runs if `allItems` or `page` changes.
 
-            val filteredItems by remember(currentListItems, nameFilters, page) {
+            val filteredItems by remember(currentListItems, appliedFilters, page) {
                 derivedStateOf {
                     currentListItems
                         .asSequence()
                         .filter { it.tabIndex == page }
                         .filter { item ->
-                            nameFilters.all { filter ->
+                            appliedFilters.all { filter ->
                                 item.name.contains(filter, ignoreCase = true)
                             }
                         }
@@ -821,7 +867,7 @@ fun Tabs(
  * A composable that displays the current search filters as dismissible pills.
  */
 @Composable
-fun DisplayTags(filters: List<String>?, onRemove: (String) -> Unit) {
+fun DisplayFilters(filters: List<String>?, onRemove: (String) -> Unit) {
     if (filters == null) {
         return
     }
@@ -1124,6 +1170,7 @@ fun rememberRowItemEditorState(
         RowItemEditorState(item, currentListIndex)
     }
 }
+
 @Composable
 fun RowItemEditorHost(
     item: RowItemUI?,
@@ -1290,7 +1337,7 @@ private fun EditorLayout(
 
         Spacer(Modifier.height(15.dp))
 
-        DisplayTags(editorState.tags) { tag ->
+        DisplayFilters(editorState.tags) { tag ->
             editorState.tags.remove(tag)
         }
 

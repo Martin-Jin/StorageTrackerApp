@@ -229,8 +229,9 @@ fun Date.toString(format: String, locale: Locale = Locale.getDefault()): String 
     return formatter.format(this)
 }
 
-fun getCurrentDateTime(): Date {
-    return Calendar.getInstance().time
+fun getCurrentDate(): String {
+    val sdf = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+    return sdf.format(Date())
 }
 
 /**
