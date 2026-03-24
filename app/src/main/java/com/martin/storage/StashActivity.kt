@@ -4,7 +4,6 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.os.Bundle
 import android.util.Log
-import android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -19,7 +18,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +38,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -93,6 +93,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -140,7 +141,7 @@ class StashActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Enables edge-to-edge display for a more immersive UI.
         enableEdgeToEdge()
-        window.setSoftInputMode(SOFT_INPUT_ADJUST_NOTHING)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
             var readData = remember { true }
             val stashLists = remember {
@@ -230,9 +231,6 @@ class StashActivity : ComponentActivity() {
                 }
             }
 
-            // Menu for editing row items
-            var showEditMenu by remember { mutableStateOf(false) }
-
             AppTheme {
                 // Scaffold provides a standard layout structure for Material Design apps.
                 Scaffold(
@@ -270,12 +268,22 @@ class StashActivity : ComponentActivity() {
                                     )
                                 },
                                 onEditTab = { tab -> tabToEdit.value = tab },
-                                showEditMenu = showEditMenu,
-                                onDismissEditMenu = { showEditMenu = false },
+                                onDismissEditMenu = { itemToEdit.value = null },
                                 currentListIndex = currentListIndex.intValue,
-                                stashLists = stashLists
                             )
 
+                            val item = itemToEdit.value
+
+                            if (item != null) {
+                                RowItemFullEditor(
+                                    stashLists = stashLists,
+                                    currentListItems = stashLists[currentListIndex.intValue].items,
+                                    item = item,
+                                    expanded = true,
+                                    onDismiss = { itemToEdit.value = null },
+                                    currentListIndex = currentListIndex.intValue
+                                )
+                            }
 
                             val cameraPermissionLauncher =
                                 rememberLauncherForActivityResult(
@@ -290,8 +298,6 @@ class StashActivity : ComponentActivity() {
                             NewRowItemBtn(
                                 modifier = Modifier.align(Alignment.BottomEnd),
                                 onClick = {
-                                    showEditMenu = true
-
                                     val newRowItemUI =
                                         RowItemUI(
                                             initialName = "New item",
@@ -299,44 +305,26 @@ class StashActivity : ComponentActivity() {
                                         )
                                     stashLists[currentListIndex.intValue].items.add(newRowItemUI)
                                     itemToEdit.value = newRowItemUI
-                                }
-                                , launchReceiptScanner = {cameraPermissionLauncher.launch(Manifest.permission.CAMERA)}
+                                },
+                                launchReceiptScanner = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
                             )
                         }
                     }
                 }
+                val item = itemToEdit.value
+
+                RowItemEditorHost(
+                    item = item,
+                    stashLists = stashLists,
+                    currentListIndex = currentListIndex.intValue,
+                    onDismiss = { itemToEdit.value = null }
+                )
             }
         }
     }
 
     fun openReceiptScanner(receiptScanner: ReceiptScannerLauncher) {
         receiptScanner.launch(this)
-    }
-}
-
-// --- Utility functions ---
-
-/**
- * Filters a list of `RowItem`s based on a list of name filters.
- *
- * @param nameFilter A list of strings to filter by.
- * @param itemsToFilter The list of `RowItem`s to filter.
- * @return A new list of `RowItem`s that match the filter criteria.
- */
-fun rowItemFilter(
-    nameFilter: MutableList<String>,
-    itemsToFilter: List<RowItemUI>
-): List<RowItemUI> {
-    if (nameFilter.isEmpty()) {
-        return itemsToFilter
-    }
-
-    // Use the .filter{} and .all{} collection functions for a more
-    // concise and correct implementation.
-    return itemsToFilter.filter { item ->
-        nameFilter.all { filter ->
-            item.name.contains(filter, ignoreCase = true)
-        }
     }
 }
 
@@ -347,7 +335,11 @@ fun rowItemFilter(
  * @param modifier The modifier to be applied to the button.
  */
 @Composable
-fun NewRowItemBtn(modifier: Modifier, onClick: () -> Unit = {}, launchReceiptScanner: () -> Unit = {}) {
+fun NewRowItemBtn(
+    modifier: Modifier,
+    onClick: () -> Unit = {},
+    launchReceiptScanner: () -> Unit = {}
+) {
     Button(
         shape = RoundedCornerShape(15.dp),
         contentPadding = PaddingValues(5.dp),
@@ -360,12 +352,12 @@ fun NewRowItemBtn(modifier: Modifier, onClick: () -> Unit = {}, launchReceiptSca
             painter = painterResource(R.drawable.plus),
             contentDescription = "Add new item"
         )
-            Button(
-                onClick = launchReceiptScanner
-            ) {
-                Text("Scan")
-            }
+        Button(
+            onClick = launchReceiptScanner
+        ) {
+            Text("Scan")
         }
+    }
 }
 
 /**
@@ -683,7 +675,6 @@ fun SearchBarPopup(
 @Composable
 fun Tabs(
     modifier: Modifier = Modifier,
-    stashLists: SnapshotStateList<StashListUI>,
     currentListItems: SnapshotStateList<RowItemUI>,
     tabs: SnapshotStateList<TabItemUI>,
     currentListIndex: Int,
@@ -808,17 +799,19 @@ fun Tabs(
                     currentListItems
                         .asSequence()
                         .filter { it.tabIndex == page }
-                        .filter { rowItemFilter(nameFilters, listOf(it)).isNotEmpty() }
+                        .filter { item ->
+                            nameFilters.all { filter ->
+                                item.name.contains(filter, ignoreCase = true)
+                            }
+                        }
                         .toList()
                 }
             }
             StorageScreen(
                 currentListItems = currentListItems,
                 itemsToShow = filteredItems,
-                showEditMenu = showEditMenu,
                 onDismissEditMenu = onDismissEditMenu,
                 currentListIndex = currentListIndex,
-                stashLists = stashLists
             )
         }
     }
@@ -929,38 +922,16 @@ fun EditTabDialogue(tabToEdit: TabItemUI?, onDismiss: () -> Unit, onSave: () -> 
  *
  * @param itemsToShow The filtered list of items to display on this screen.
  * @param currentListItems The complete list of all items, passed down to be modified by child composables.
- * @param showEditMenu Triggers the menu from external composable functions, such as the add row item button.
  * @param onDismissEditMenu Dismiss the menu from external composables.
  */
 @Composable
 fun StorageScreen(
-    stashLists: SnapshotStateList<StashListUI>,
     itemsToShow: List<RowItemUI>,
     currentListItems: SnapshotStateList<RowItemUI>,
-    showEditMenu: Boolean = false,
     onDismissEditMenu: () -> Unit,
     currentListIndex: Int
 ) {
     val editRow = remember { mutableStateOf(false) }
-    val showEditor = remember(showEditMenu, editRow.value) {
-        showEditMenu || editRow.value
-    }
-
-    if (showEditor) {
-        val item = itemToEdit.value ?: return
-        RowItemFullEditor(
-            currentListItems = currentListItems,
-            item = item,
-            expanded = true,
-            onDismiss = {
-                itemToEdit.value = null
-                editRow.value = false
-                onDismissEditMenu()
-            },
-            currentListIndex = currentListIndex,
-            stashLists = stashLists,
-        )
-    }
 
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = 0
@@ -1153,7 +1124,27 @@ fun rememberRowItemEditorState(
         RowItemEditorState(item, currentListIndex)
     }
 }
+@Composable
+fun RowItemEditorHost(
+    item: RowItemUI?,
+    stashLists: SnapshotStateList<StashListUI>,
+    currentListIndex: Int,
+    onDismiss: () -> Unit
+) {
+    if (item == null) return
 
+    // Completely separate composition
+    key(item.identifier) {
+        RowItemFullEditor(
+            stashLists = stashLists,
+            currentListItems = stashLists[currentListIndex].items,
+            item = item,
+            expanded = true,
+            onDismiss = onDismiss,
+            currentListIndex = currentListIndex
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1165,21 +1156,25 @@ fun RowItemFullEditor(
     onDismiss: () -> Unit,
     currentListIndex: Int
 ) {
-
     val context = LocalContext.current
     val editorState = rememberRowItemEditorState(item, currentListIndex)
 
-    // Freeze UI data to prevent SnapshotStateList recompositions
+    // Cache tabs list to prevent re-composition
     val tabs = remember(currentListIndex) {
-        stashLists[currentListIndex].tabs.toList()
+        stashLists.getOrNull(currentListIndex)?.tabs?.toList() ?: emptyList()
     }
 
-    val listNames = stashLists.map { it.listName.value }
+    // Cache list names
+    val listNames = remember {
+        stashLists.map { it.listName.value }
+    }
 
+    // Cache image model based on imgPath
     val imageModel = remember(editorState.imgPath) {
         editorState.imgPath.toIntOrNull() ?: File(editorState.imgPath)
     }
 
+    // Remember the image picker launcher
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
@@ -1189,38 +1184,37 @@ fun RowItemFullEditor(
         }
     }
 
+    // Wrap BottomPopUp with remember to avoid re-creating sheetState
     BottomPopUp(
         title = "",
         expanded = expanded,
         onDismissRequest = onDismiss,
         fullScreen = true
     ) {
-
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            item {
-                TextField(
-                    value = editorState.nameText,
-                    onValueChange = { editorState.nameText = it },
-                    textStyle = MaterialTheme.typography.headlineSmall.copy(
-                        textAlign = TextAlign.Center
-                    ),
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth(0.8f),
-                    colors = TextFieldDefaults.colors(
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = MaterialTheme.colorScheme.primary
-                    ),
-                )
-            }
+            // Memoize TextField to prevent unnecessary re-compositions
+            TextField(
+                value = editorState.nameText,
+                onValueChange = { editorState.nameText = it },
+                textStyle = MaterialTheme.typography.headlineSmall.copy(
+                    textAlign = TextAlign.Center
+                ),
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth(0.8f),
+                colors = TextFieldDefaults.colors(
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                ),
+            )
         }
         EditorLayout(
             editorState = editorState,
@@ -1229,7 +1223,6 @@ fun RowItemFullEditor(
             listNames = listNames,
             onPickImage = { imagePicker.launch("image/*") },
             onSave = {
-
                 val count = editorState.countText.toIntOrNull() ?: 0
 
                 item.name = editorState.nameText
@@ -1247,15 +1240,13 @@ fun RowItemFullEditor(
                 onDismiss()
             },
             onDelete = {
-                stashLists[currentListIndex].items.remove(itemToEdit.value)
+                stashLists[currentListIndex].items.remove(item)
                 onDismiss()
             }
         )
     }
 }
 
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun EditorLayout(
     editorState: RowItemEditorState,
@@ -1266,156 +1257,117 @@ private fun EditorLayout(
     onSave: () -> Unit,
     onDelete: () -> Unit,
 ) {
-
     val context = LocalContext.current
+    val scrollState = rememberScrollState()
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp),
+            .verticalScroll(scrollState)
+            .padding(horizontal = 24.dp)
+            .imePadding(),
     ) {
 
-        item {
-            Spacer(Modifier.height(24.dp))
-        }
+        Spacer(Modifier.height(24.dp))
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(imageModel)
-                        .crossfade(true)
-                        .diskCachePolicy(CachePolicy.ENABLED)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(120.dp)
-                        .clip(CircleShape)
-                        .clickable { onPickImage() }
-                )
-            }
-        }
-
-        item { Spacer(Modifier.height(15.dp)) }
-        item {
-            DisplayTags(editorState.tags) { string ->
-                itemToEdit.value?.tags?.remove(string)
-                editorState.tags.remove(string)
-            }
-        }
-        item { Spacer(Modifier.height(20.dp)) }
-
-        item {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-
-                OutlinedTextField(
-                    value = editorState.countText,
-                    onValueChange = { editorState.countText = it },
-                    label = { Text("Count") },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number
-                    ),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-
-                OutlinedTextField(
-                    value = editorState.unitText,
-                    onValueChange = { editorState.unitText = it },
-                    label = { Text("Unit") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        item {
-            Spacer(Modifier.height(28.dp))
-        }
-
-        item {
-            TabDropdown(
-                tabs = tabs,
-                selectedTabIndex = editorState.tabIndex,
-                expanded = editorState.tabExpanded,
-                onExpandedChange = { editorState.tabExpanded = it },
-                onTabSelected = { editorState.tabIndex = it }
-            )
-        }
-
-        item {
-            Spacer(Modifier.height(20.dp))
-        }
-
-        item {
-            ListDropdown(
-                listNames = listNames,
-                selectedIndex = editorState.listIndex,
-                expanded = editorState.listExpanded,
-                onExpandedChange = { editorState.listExpanded = it },
-                onSelected = { editorState.listIndex = it }
-            )
-        }
-
-        item {
-            Spacer(Modifier.height(20.dp))
-        }
-
-        // Text field for item tags
-        item {
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
-                value = editorState.tagsText,
-                onValueChange = {
-                    editorState.tagsText = it
-                },
-                label = { Text("Tags (separate by \", \"") },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text
-                ),
-                singleLine = true,
-            )
-        }
-
-        item {
-            Spacer(Modifier.height(20.dp))
-        }
-
-        item {
-            Spacer(Modifier.height(32.dp))
-        }
-
-        item {
-            Row(
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(imageModel)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    .size(120.dp)
+                    .clip(CircleShape)
+                    .clickable { onPickImage() }
+            )
+        }
+
+        Spacer(Modifier.height(15.dp))
+
+        DisplayTags(editorState.tags) { tag ->
+            editorState.tags.remove(tag)
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+
+            OutlinedTextField(
+                value = editorState.countText,
+                onValueChange = { editorState.countText = it },
+                label = { Text("Count") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+
+            OutlinedTextField(
+                value = editorState.unitText,
+                onValueChange = { editorState.unitText = it },
+                label = { Text("Unit") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(Modifier.height(28.dp))
+
+        TabDropdown(
+            tabs = tabs,
+            selectedTabIndex = editorState.tabIndex,
+            expanded = editorState.tabExpanded,
+            onExpandedChange = { editorState.tabExpanded = it },
+            onTabSelected = { editorState.tabIndex = it }
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        ListDropdown(
+            listNames = listNames,
+            selectedIndex = editorState.listIndex,
+            expanded = editorState.listExpanded,
+            onExpandedChange = { editorState.listExpanded = it },
+            onSelected = { editorState.listIndex = it }
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        OutlinedTextField(
+            value = editorState.tagsText,
+            onValueChange = { editorState.tagsText = it },
+            label = { Text("Tags (separate by \", \"") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(Modifier.height(32.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(onClick = onSave, modifier = Modifier.weight(1f)) {
+                Text("Save")
+            }
+
+            Button(
+                onClick = onDelete,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
             ) {
-
-                Button(
-                    onClick = onSave,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Save")
-                }
-
-                Button(
-                    modifier = Modifier.weight(1f),
-                    onClick = onDelete,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Delete")
-                }
+                Text("Delete")
             }
         }
+
+        Spacer(Modifier.height(40.dp))
     }
 }
 
@@ -1571,9 +1523,9 @@ fun StorageScreenPreview() {
                         onEditTab = {},
                         onSwitchTab = {},
                         currentListIndex = 0,
-                        stashLists = stashLists,
                         onDismissEditMenu = {}
                     )
+
                     // This button provides a way for the user to add a new item.
                     NewRowItemBtn(
                         modifier = Modifier.align(Alignment.BottomEnd)

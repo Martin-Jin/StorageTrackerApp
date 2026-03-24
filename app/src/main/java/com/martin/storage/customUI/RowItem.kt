@@ -6,10 +6,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.martin.storage.R
 import kotlinx.serialization.Serializable
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 // --- Data Models ---
 
@@ -98,38 +94,6 @@ class RowItemUI(
          * When it is `null`, the dialog is hidden.
          */
         var itemToEdit = mutableStateOf<RowItemUI?>(null)
-
-        /**
-         * Decreases the item's count by the `decrement` value, preventing it from going below zero.
-         * This function now takes the last opened date and calculates the difference in days.
-         */
-        fun decrementByDays(pageItems: MutableList<RowItemUI>) {
-            pageItems.forEach { 
-                val last = it.lastOpened
-                if (last.isNotEmpty()) {
-                    val format = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                    try {
-                        val lastDate = format.parse(last)
-                        if (lastDate != null) {
-                            val currentDate = Date()
-                            val diff = currentDate.time - lastDate.time
-                            val daysPassed = TimeUnit.MILLISECONDS.toDays(diff)
-
-                            if (daysPassed > 0 && it.decrementInterval > 0) {
-                                val timesToDecrement = daysPassed / it.decrementInterval
-                                if (timesToDecrement > 0) {
-                                    val totalDecrement = (it.decrement * timesToDecrement).toInt()
-                                    it.decreaseCount(totalDecrement)
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        // Handle exception
-                    }
-                }
-                it.lastOpened = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()).format(Date())
-            }
-        }
     }
 
     /**

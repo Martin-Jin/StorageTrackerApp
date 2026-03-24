@@ -3,7 +3,6 @@ package com.martin.storage.ui.theme
 import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -115,86 +114,80 @@ fun BottomPopUp(
     fullScreen: Boolean = false,
     content: @Composable ColumnScope.() -> Unit = {}
 ) {
+    if (!expanded) return
 
     val sheetState = rememberModalBottomSheetState(
-        skipPartiallyExpanded = true // 👈 THIS is the key
+        skipPartiallyExpanded = true
     )
 
-    if (expanded) {
-        ModalBottomSheet(
-            sheetState = sheetState,
-            onDismissRequest = onDismissRequest,
-            scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)
+    ModalBottomSheet(
+        sheetState = sheetState,
+        onDismissRequest = onDismissRequest,
+        dragHandle = null,
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.2f)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
+
+            if (title.isNotEmpty()) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            if (buttons.isNotEmpty()) {
+                BottomSheetButtons(buttons)
+            }
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .imePadding().then(
+                    .then(
                         if (fullScreen) Modifier.fillMaxHeight()
                         else Modifier.wrapContentHeight()
                     )
             ) {
-
-                if (title.isNotEmpty()) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp, bottom = 12.dp),
-                        textAlign = TextAlign.Center
-                    )
-                }
-
-                if (buttons.isNotEmpty()) {
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                    ) {
-                        val interactionSource = remember { MutableInteractionSource() }
-                        buttons.forEach { button ->
-
-                            // Pre-measure touch target for smoother click handling
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp)
-                                    .clickable(
-                                        indication = null,
-                                        interactionSource = interactionSource
-                                    ) {
-                                        button.onClick()
-                                    }
-                                    .padding(horizontal = 24.dp),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-
-                                    if (button.icon != 0) {
-                                        Icon(
-                                            painter = painterResource(button.icon),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-
-                                        Spacer(Modifier.width(14.dp))
-                                    }
-
-                                    Text(
-                                        text = button.text,
-                                        style = MaterialTheme.typography.bodyLarge
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
                 content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun BottomSheetButtons(buttons: List<DropDownButton>) {
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Column {
+        buttons.forEach { button ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        indication = null,
+                        interactionSource = interactionSource
+                    ) { button.onClick() }
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (button.icon != 0) {
+                    Icon(
+                        painter = painterResource(button.icon),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(14.dp))
+                }
+
+                Text(
+                    text = button.text,
+                    style = MaterialTheme.typography.bodyLarge
+                )
             }
         }
     }
